@@ -30,6 +30,7 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_CHAT_ID_2 = os.getenv("TELEGRAM_CHAT_ID_2")  # Дополнительный канал для сигналов
 
 SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "600"))
 TOP_N = int(os.getenv("TOP_N", "8"))
@@ -420,8 +421,15 @@ def format_signals_message_console(
     return "\n".join(lines)
 
 
-async def send_telegram_file_async(content: str, filename: str):
-    """Асинхронная отправка файла в Telegram"""
+async def send_telegram_file_async(content: str, filename: str, chat_id: str):
+    """Асинхронная отправка файла в Telegram
+    content: содержимое файла
+    filename: имя файла
+    chat_id: ID чата для отправки
+    """
+    # Пересоздаем bot объект для каждой отправки, чтобы избежать проблем с event loop
+    async_bot = Bot(token=TELEGRAM_BOT_TOKEN)
+    
     # Создаем файл в памяти
     file_obj = BytesIO(content.encode('utf-8'))
     file_obj.name = filename
@@ -429,41 +437,52 @@ async def send_telegram_file_async(content: str, filename: str):
     # Используем InputFile для правильной отправки файла
     input_file = InputFile(file_obj, filename=filename)
     
-    await bot.send_document(
-        chat_id=TELEGRAM_CHAT_ID,
-        document=input_file,
-        caption=filename.replace('.txt', '').replace('_', ' ').title()
-    )
+    try:
+        await async_bot.send_document(
+            chat_id=chat_id,
+            document=input_file,
+            caption=filename.replace('.txt', '').replace('_', ' ').title()
+        )
+    finally:
+        # Закрываем сессию bot объекта
+        await async_bot.close()
 
 
-async def send_telegram_files_async(files: List[Tuple[str, str]]):
-    """Асинхронная отправка нескольких файлов в Telegram
+async def send_telegram_files_async(files: List[Tuple[str, str]], chat_ids: List[str]):
+    """Асинхронная отправка нескольких файлов в Telegram в несколько каналов
     files: список кортежей (content, filename)
+    chat_ids: список ID чатов для отправки
     """
-    for content, filename in files:
-        await send_telegram_file_async(content, filename)
+    for chat_id in chat_ids:
+        for content, filename in files:
+            await send_telegram_file_async(content, filename, chat_id)
 
 
-def send_telegram_file(content: str, filename: str):
-    """Синхронная обертка для отправки файла в Telegram"""
-    send_telegram_files([(content, filename)])
+def send_telegram_file(content: str, filename: str, chat_ids: Optional[List[str]] = None):
+    """Синхронная обертка для отправки файла в Telegram
+    chat_ids: список ID чатов (по умолчанию только основной канал)
+    """
+    if chat_ids is None:
+        chat_ids = [TELEGRAM_CHAT_ID]
+    send_telegram_files([(content, filename)], chat_ids)
 
 
-def send_telegram_files(files: List[Tuple[str, str]]):
+def send_telegram_files(files: List[Tuple[str, str]], chat_ids: Optional[List[str]] = None):
     """Синхронная обертка для отправки нескольких файлов в Telegram в одном event loop
     files: список кортежей (content, filename)
+    chat_ids: список ID чатов для отправки (по умолчанию только основной канал)
     """
     if not files:
         return
     
+    if chat_ids is None:
+        chat_ids = [TELEGRAM_CHAT_ID]
+    
     try:
-        # Создаем один event loop для всех файлов
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            loop.run_until_complete(send_telegram_files_async(files))
-        finally:
-            loop.close()
+        # Используем asyncio.run() для правильного управления event loop
+        # Это работает корректно даже при повторных вызовах из синхронного контекста
+        # asyncio.run() автоматически создает новый event loop и правильно его закрывает
+        asyncio.run(send_telegram_files_async(files, chat_ids))
     except Exception as e:
         logging.error("Ошибка при отправке файлов в Telegram: %s", e)
         raise
@@ -579,20 +598,34 @@ def run_once():
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         
         files_to_send = []
+        signals_files_to_send = []
         
         # Отправляем файл с сигналами только если есть хотя бы один сигнал
         if gain_signals or loss_signals:
-            files_to_send.append((msg, f"signals_{timestamp}.txt"))
+            signals_files_to_send.append((msg, f"signals_{timestamp}.txt"))
             logging.info("Найдены сигналы, будет отправлен файл signals.")
         else:
             logging.info("Сигналов не найдено, файл signals не отправляется.")
         
-        # Логи отправляем всегда
+        # Логи отправляем всегда в основной канал
         files_to_send.append((logs_msg, f"logs_{timestamp}.txt"))
         
+        # Отправляем логи в основной канал
         if files_to_send:
-            send_telegram_files(files_to_send)
-            logging.info("Отправлены файлы в Telegram.")
+            send_telegram_files(files_to_send, [TELEGRAM_CHAT_ID])
+            logging.info("Отправлены файлы логов в основной канал Telegram.")
+        
+        # Если есть сигналы, отправляем их в оба канала (основной и дополнительный)
+        if signals_files_to_send:
+            chat_ids = [TELEGRAM_CHAT_ID]
+            if TELEGRAM_CHAT_ID_2:
+                chat_ids.append(TELEGRAM_CHAT_ID_2)
+                logging.info("Отправляем сигналы в основной и дополнительный каналы.")
+            else:
+                logging.info("Отправляем сигналы только в основной канал (дополнительный не задан).")
+            
+            send_telegram_files(signals_files_to_send, chat_ids)
+            logging.info("Отправлены файлы сигналов в Telegram.")
     except Exception as e:
         logging.warning("Не удалось отправить файлы в Telegram: %s", e)
 
