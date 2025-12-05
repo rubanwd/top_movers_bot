@@ -34,8 +34,17 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 TELEGRAM_CHAT_ID_2 = os.getenv("TELEGRAM_CHAT_ID_2")  # Дополнительный канал для сигналов
 
 SCAN_INTERVAL_SECONDS = int(os.getenv("SCAN_INTERVAL_SECONDS", "600"))
-TOP_N = int(os.getenv("TOP_N", "8"))
+
+# Загружаем TOP_N с отладкой
+top_n_raw = os.getenv("TOP_N", "8")
+logging.info(f"TOP_N из .env (сырое значение): '{top_n_raw}' (тип: {type(top_n_raw).__name__})")
+TOP_N = int(top_n_raw.strip()) if top_n_raw else 8
+logging.info(f"TOP_N после обработки: {TOP_N}")
+
 MIN_QUOTE_VOLUME_USDT = float(os.getenv("MIN_QUOTE_VOLUME_USDT", "1000000"))
+
+# Логируем загруженные значения для отладки
+logging.info(f"Загружены настройки: TOP_N={TOP_N}, SCAN_INTERVAL_SECONDS={SCAN_INTERVAL_SECONDS}, MIN_QUOTE_VOLUME_USDT={MIN_QUOTE_VOLUME_USDT}")
 
 TIMEFRAME_MAIN = os.getenv("TIMEFRAME_MAIN", "5m")
 TIMEFRAME_TREND = os.getenv("TIMEFRAME_TREND", "1h")
@@ -728,6 +737,7 @@ def run_once():
 
 def main():
     logging.info("Запускаем Binance Top Movers bot (FULL mode).")
+    logging.info(f"Текущие настройки: TOP_N={TOP_N}, SCAN_INTERVAL_SECONDS={SCAN_INTERVAL_SECONDS}")
     while True:
         try:
             run_once()
