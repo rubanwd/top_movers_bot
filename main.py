@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import math
 import logging
@@ -421,31 +422,85 @@ def format_signals_message_console(
     return "\n".join(lines)
 
 
-async def send_telegram_file_async(content: str, filename: str, chat_id: str):
-    """Асинхронная отправка файла в Telegram
+async def send_telegram_file_async(content: str, filename: str, chat_id: str, max_retries: int = 3):
+    """Асинхронная отправка файла в Telegram с обработкой Flood control
     content: содержимое файла
     filename: имя файла
-    chat_id: ID чата для отправки
+    chat_id: ID чата для отправки (строка или число, будет преобразовано в строку)
+    max_retries: максимальное количество попыток при Flood control
     """
+    # Убеждаемся, что chat_id - строка
+    chat_id_str = str(chat_id).strip()
+    if not chat_id_str:
+        raise ValueError(f"chat_id не может быть пустым: {chat_id}")
+    
     # Пересоздаем bot объект для каждой отправки, чтобы избежать проблем с event loop
     async_bot = Bot(token=TELEGRAM_BOT_TOKEN)
     
-    # Создаем файл в памяти
-    file_obj = BytesIO(content.encode('utf-8'))
-    file_obj.name = filename
-    
-    # Используем InputFile для правильной отправки файла
-    input_file = InputFile(file_obj, filename=filename)
-    
     try:
-        await async_bot.send_document(
-            chat_id=chat_id,
-            document=input_file,
-            caption=filename.replace('.txt', '').replace('_', ' ').title()
-        )
+        # Создаем файл в памяти для каждого отправления
+        file_obj = BytesIO(content.encode('utf-8'))
+        file_obj.name = filename
+        
+        # Используем InputFile для правильной отправки файла
+        input_file = InputFile(file_obj, filename=filename)
+        
+        logging.info(f"Отправляем файл {filename} в chat_id {chat_id_str}")
+        
+        # Попытки отправки с обработкой Flood control
+        for attempt in range(max_retries):
+            try:
+                await async_bot.send_document(
+                    chat_id=chat_id_str,
+                    document=input_file,
+                    caption=filename.replace('.txt', '').replace('_', ' ').title()
+                )
+                logging.info(f"Файл {filename} успешно отправлен в chat_id {chat_id_str}")
+                return  # Успешно отправлено
+            except Exception as e:
+                error_str = str(e)
+                # Проверяем, является ли это ошибкой Flood control
+                if "Flood control" in error_str or "429" in error_str:
+                    # Извлекаем время ожидания из сообщения об ошибке
+                    retry_after = 2  # По умолчанию 2 секунды
+                    if "Retry in" in error_str:
+                        try:
+                            # Пытаемся извлечь число из сообщения
+                            match = re.search(r'Retry in (\d+)', error_str)
+                            if match:
+                                retry_after = int(match.group(1)) + 1
+                        except:
+                            pass
+                    
+                    if attempt < max_retries - 1:
+                        logging.warning(f"Flood control для {filename} в {chat_id_str}. Ожидание {retry_after} секунд перед повторной попыткой {attempt + 2}/{max_retries}")
+                        await asyncio.sleep(retry_after)
+                        # Пересоздаем файл для новой попытки
+                        file_obj = BytesIO(content.encode('utf-8'))
+                        file_obj.name = filename
+                        input_file = InputFile(file_obj, filename=filename)
+                        continue
+                    else:
+                        logging.error(f"Превышено максимальное количество попыток для {filename} в {chat_id_str} из-за Flood control")
+                        raise
+                else:
+                    # Другая ошибка - пробрасываем сразу
+                    raise
+        
+    except Exception as e:
+        logging.error(f"Ошибка при отправке файла {filename} в chat_id {chat_id_str}: {e}", exc_info=True)
+        raise
     finally:
-        # Закрываем сессию bot объекта
-        await async_bot.close()
+        # Закрываем сессию bot объекта (игнорируем ошибки Flood control при закрытии)
+        try:
+            await async_bot.close()
+        except Exception as e:
+            error_str = str(e)
+            if "Flood control" in error_str or "429" in error_str:
+                # Это не критично - файл уже отправлен
+                logging.debug(f"Flood control при закрытии bot объекта (не критично): {e}")
+            else:
+                logging.warning(f"Ошибка при закрытии bot объекта: {e}")
 
 
 async def send_telegram_files_async(files: List[Tuple[str, str]], chat_ids: List[str]):
@@ -453,9 +508,34 @@ async def send_telegram_files_async(files: List[Tuple[str, str]], chat_ids: List
     files: список кортежей (content, filename)
     chat_ids: список ID чатов для отправки
     """
-    for chat_id in chat_ids:
-        for content, filename in files:
-            await send_telegram_file_async(content, filename, chat_id)
+    logging.info(f"Начинаем отправку {len(files)} файлов в {len(chat_ids)} каналов")
+    errors = []
+    for chat_idx, chat_id in enumerate(chat_ids):
+        logging.info(f"Обрабатываем канал: {chat_id}")
+        for file_idx, (content, filename) in enumerate(files):
+            try:
+                logging.info(f"Попытка отправить файл {filename} в канал {chat_id}")
+                await send_telegram_file_async(content, filename, chat_id)
+                logging.info(f"Успешно отправлен файл {filename} в канал {chat_id}")
+                
+                # Добавляем небольшую задержку между отправками, чтобы избежать Flood control
+                # Задержка только между разными каналами или файлами (не после последнего)
+                is_last_file = (file_idx == len(files) - 1)
+                is_last_chat = (chat_idx == len(chat_ids) - 1)
+                if not (is_last_file and is_last_chat):
+                    await asyncio.sleep(0.5)  # 500ms задержка между отправками
+            except Exception as e:
+                error_msg = f"Не удалось отправить {filename} в {chat_id}: {e}"
+                logging.error(error_msg, exc_info=True)
+                errors.append(error_msg)
+                # Продолжаем отправку остальных файлов даже если один не удался
+                continue
+    
+    if errors:
+        logging.warning(f"Было {len(errors)} ошибок при отправке файлов: {errors}")
+        # Если все отправки провалились, пробрасываем ошибку
+        if len(errors) == len(files) * len(chat_ids):
+            raise RuntimeError(f"Все попытки отправки провалились: {errors}")
 
 
 def send_telegram_file(content: str, filename: str, chat_ids: Optional[List[str]] = None):
@@ -473,18 +553,30 @@ def send_telegram_files(files: List[Tuple[str, str]], chat_ids: Optional[List[st
     chat_ids: список ID чатов для отправки (по умолчанию только основной канал)
     """
     if not files:
+        logging.warning("send_telegram_files вызвана с пустым списком файлов")
         return
     
     if chat_ids is None:
         chat_ids = [TELEGRAM_CHAT_ID]
     
+    if not chat_ids:
+        logging.warning("send_telegram_files вызвана с пустым списком chat_ids")
+        return
+    
     try:
+        logging.info(f"Вызываем asyncio.run для отправки {len(files)} файлов в {len(chat_ids)} каналов")
         # Используем asyncio.run() для правильного управления event loop
         # Это работает корректно даже при повторных вызовах из синхронного контекста
         # asyncio.run() автоматически создает новый event loop и правильно его закрывает
         asyncio.run(send_telegram_files_async(files, chat_ids))
+        logging.info("asyncio.run завершился успешно")
+    except RuntimeError as e:
+        if "asyncio.run() cannot be called from a running event loop" in str(e):
+            logging.error("Попытка вызвать asyncio.run() из запущенного event loop. Это не должно происходить в синхронном контексте.")
+        logging.error("RuntimeError при отправке файлов в Telegram: %s", e, exc_info=True)
+        raise
     except Exception as e:
-        logging.error("Ошибка при отправке файлов в Telegram: %s", e)
+        logging.error("Ошибка при отправке файлов в Telegram: %s", e, exc_info=True)
         raise
 
 
@@ -620,12 +712,16 @@ def run_once():
             chat_ids = [TELEGRAM_CHAT_ID]
             if TELEGRAM_CHAT_ID_2:
                 chat_ids.append(TELEGRAM_CHAT_ID_2)
-                logging.info("Отправляем сигналы в основной и дополнительный каналы.")
+                logging.info(f"Отправляем сигналы в основной ({TELEGRAM_CHAT_ID}) и дополнительный ({TELEGRAM_CHAT_ID_2}) каналы.")
             else:
-                logging.info("Отправляем сигналы только в основной канал (дополнительный не задан).")
+                logging.info(f"Отправляем сигналы только в основной канал ({TELEGRAM_CHAT_ID}, дополнительный не задан).")
             
-            send_telegram_files(signals_files_to_send, chat_ids)
-            logging.info("Отправлены файлы сигналов в Telegram.")
+            logging.info(f"Вызываем send_telegram_files с {len(signals_files_to_send)} файлами и {len(chat_ids)} каналами")
+            try:
+                send_telegram_files(signals_files_to_send, chat_ids)
+                logging.info("Отправлены файлы сигналов в Telegram.")
+            except Exception as e:
+                logging.error(f"КРИТИЧЕСКАЯ ОШИБКА при отправке сигналов: {e}", exc_info=True)
     except Exception as e:
         logging.warning("Не удалось отправить файлы в Telegram: %s", e)
 
