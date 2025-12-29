@@ -49,12 +49,12 @@ logging.info(f"Загружены настройки: TOP_N={TOP_N}, SCAN_INTERV
 TIMEFRAME_MAIN = os.getenv("TIMEFRAME_MAIN", "5m")
 TIMEFRAME_TREND = os.getenv("TIMEFRAME_TREND", "1h")
 
-RSI_LONG_MIN = float(os.getenv("RSI_LONG_MIN", "45"))  # Изменено с 50 для более раннего входа
-RSI_LONG_MAX = float(os.getenv("RSI_LONG_MAX", "65"))  # Изменено с 72 для более раннего входа
-RSI_SHORT_MIN = float(os.getenv("RSI_SHORT_MIN", "35"))  # Изменено с 28 для более раннего входа
-RSI_SHORT_MAX = float(os.getenv("RSI_SHORT_MAX", "55"))  # Изменено с 50 для более раннего входа
+RSI_LONG_MIN = float(os.getenv("RSI_LONG_MIN", "40"))  # Смягчено с 45 для большего количества сигналов
+RSI_LONG_MAX = float(os.getenv("RSI_LONG_MAX", "70"))  # Смягчено с 65 для большего количества сигналов
+RSI_SHORT_MIN = float(os.getenv("RSI_SHORT_MIN", "30"))  # Смягчено с 35 для большего количества сигналов
+RSI_SHORT_MAX = float(os.getenv("RSI_SHORT_MAX", "60"))  # Смягчено с 55 для большего количества сигналов
 
-VOL_SPIKE_MULTIPLIER = float(os.getenv("VOL_SPIKE_MULTIPLIER", "1.15"))  # Смягчено до 1.15 для большего количества сигналов
+VOL_SPIKE_MULTIPLIER = float(os.getenv("VOL_SPIKE_MULTIPLIER", "1.10"))  # Смягчено до 1.10 для большего количества сигналов
 
 ATR_SL_MULTIPLIER = float(os.getenv("ATR_SL_MULTIPLIER", "1.5"))
 ATR_TP1_MULTIPLIER = float(os.getenv("ATR_TP1_MULTIPLIER", "2.0"))
@@ -66,7 +66,7 @@ BTC_TREND_FILTER = int(os.getenv("BTC_TREND_FILTER", "1"))
 MAX_24H_CHANGE = float(os.getenv("MAX_24H_CHANGE", "30.0"))  # Максимальное изменение за 24ч (увеличено для большего количества сигналов, 0=отключить фильтр)
 USE_MAX_24H_FILTER = int(os.getenv("USE_MAX_24H_FILTER", "0"))  # Использовать фильтр по максимальному изменению (0=выключено по умолчанию)
 RECENT_CANDLES_LOOKBACK = int(os.getenv("RECENT_CANDLES_LOOKBACK", "3"))  # Сколько свечей проверять для недавнего движения (уменьшено для более раннего обнаружения)
-MIN_RECENT_CHANGE_PCT = float(os.getenv("MIN_RECENT_CHANGE_PCT", "0.2"))  # Минимальное изменение за последние N свечей (%) (смягчено для раннего входа)
+MIN_RECENT_CHANGE_PCT = float(os.getenv("MIN_RECENT_CHANGE_PCT", "0.1"))  # Минимальное изменение за последние N свечи (%) (смягчено для большего количества сигналов)
 RECENT_MOVE_CHECK = int(os.getenv("RECENT_MOVE_CHECK", "1"))  # Проверять недавнее движение (1=включено по умолчанию для раннего обнаружения)
 RSI_ENTRY_CHECK = int(os.getenv("RSI_ENTRY_CHECK", "1"))  # Проверять, что RSI только что вошел в зону (1=включено по умолчанию для раннего входа)
 EMA_CROSS_RECENT = int(os.getenv("EMA_CROSS_RECENT", "1"))  # Проверять недавнее пересечение EMA (1=включено по умолчанию для раннего обнаружения)
@@ -278,11 +278,11 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_2 = (float(close.iloc[-2]) - float(close.iloc[-3])) / float(close.iloc[-3]) * 100
         
         if side == "LONG":
-            # Для LONG: ускорение роста (вторая свеча растет быстрее первой)
-            momentum_ok = price_change_1 > price_change_2 and price_change_1 > 0
+            # Для LONG: ускорение роста ИЛИ просто рост (смягчено для большего количества сигналов)
+            momentum_ok = (price_change_1 > price_change_2 and price_change_1 > 0) or price_change_1 > 0.05  # Или просто рост > 0.05%
         else:
-            # Для SHORT: ускорение падения (вторая свеча падает быстрее первой)
-            momentum_ok = price_change_1 < price_change_2 and price_change_1 < 0
+            # Для SHORT: ускорение падения ИЛИ просто падение (смягчено для большего количества сигналов)
+            momentum_ok = (price_change_1 < price_change_2 and price_change_1 < 0) or price_change_1 < -0.05  # Или просто падение > 0.05%
 
     # ========== ПРОВЕРКИ ДЛЯ РАННЕГО ОБНАРУЖЕНИЯ ДВИЖЕНИЯ (ОПЦИОНАЛЬНЫЕ) ==========
     
@@ -317,17 +317,19 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         prev_prev_rsi = float(rsi_series.iloc[-3])
         
         if side == "LONG":
-            # RSI должен был быть ниже зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 60%)
+            # RSI должен был быть ниже зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 70%), ИЛИ просто в зоне и растет
             rsi_just_entered = (prev_rsi < RSI_LONG_MIN or prev_prev_rsi < RSI_LONG_MIN) and (RSI_LONG_MIN <= last_rsi <= RSI_LONG_MAX)
-            rsi_in_early_zone = RSI_LONG_MIN <= last_rsi <= (RSI_LONG_MIN + (RSI_LONG_MAX - RSI_LONG_MIN) * 0.6)  # Первые 60% зоны
+            rsi_in_early_zone = RSI_LONG_MIN <= last_rsi <= (RSI_LONG_MIN + (RSI_LONG_MAX - RSI_LONG_MIN) * 0.7)  # Первые 70% зоны (смягчено)
             rsi_rising = last_rsi > prev_rsi  # RSI растет
-            rsi_entry_ok = (rsi_just_entered or rsi_in_early_zone) and rsi_rising
+            rsi_in_zone = RSI_LONG_MIN <= last_rsi <= RSI_LONG_MAX  # Просто в зоне
+            rsi_entry_ok = (rsi_just_entered or rsi_in_early_zone or (rsi_in_zone and rsi_rising))  # Смягчено для большего количества сигналов
         else:
-            # RSI должен был быть выше зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 60%)
+            # RSI должен был быть выше зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 70%), ИЛИ просто в зоне и падает
             rsi_just_entered = (prev_rsi > RSI_SHORT_MAX or prev_prev_rsi > RSI_SHORT_MAX) and (RSI_SHORT_MIN <= last_rsi <= RSI_SHORT_MAX)
-            rsi_in_early_zone = (RSI_SHORT_MIN + (RSI_SHORT_MAX - RSI_SHORT_MIN) * 0.4) <= last_rsi <= RSI_SHORT_MAX  # Последние 60% зоны (для SHORT это нижняя часть)
+            rsi_in_early_zone = (RSI_SHORT_MIN + (RSI_SHORT_MAX - RSI_SHORT_MIN) * 0.3) <= last_rsi <= RSI_SHORT_MAX  # Последние 70% зоны (смягчено)
             rsi_falling = last_rsi < prev_rsi  # RSI падает
-            rsi_entry_ok = (rsi_just_entered or rsi_in_early_zone) and rsi_falling
+            rsi_in_zone = RSI_SHORT_MIN <= last_rsi <= RSI_SHORT_MAX  # Просто в зоне
+            rsi_entry_ok = (rsi_just_entered or rsi_in_early_zone or (rsi_in_zone and rsi_falling))  # Смягчено для большего количества сигналов
         
         if not rsi_entry_ok:
             return None
@@ -344,12 +346,17 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         prev_prev_ema_slow = float(ema_slow.iloc[-3]) if len(ema_slow) >= 3 else prev_ema_slow
         
         if side == "LONG":
-            # EMA должны были пересечься недавно или движение только началось
-            ema_cross_ok = (prev_ema_fast <= prev_ema_slow or prev_prev_ema_fast <= prev_prev_ema_slow) and \
-                          (last_ema_fast > last_ema_slow)
+            # EMA должны были пересечься недавно, ИЛИ сближаются, ИЛИ уже пересекли (смягчено)
+            ema_crossed = (prev_ema_fast <= prev_ema_slow or prev_prev_ema_fast <= prev_prev_ema_slow) and (last_ema_fast > last_ema_slow)
+            ema_converging = (last_ema_fast - last_ema_slow) > (prev_ema_fast - prev_ema_slow)  # Сближаются
+            ema_already_crossed = last_ema_fast > last_ema_slow  # Уже пересекли
+            ema_cross_ok = ema_crossed or ema_converging or ema_already_crossed  # Смягчено для большего количества сигналов
         else:
-            ema_cross_ok = (prev_ema_fast >= prev_ema_slow or prev_prev_ema_fast >= prev_prev_ema_slow) and \
-                          (last_ema_fast < last_ema_slow)
+            # Для SHORT: аналогично
+            ema_crossed = (prev_ema_fast >= prev_ema_slow or prev_prev_ema_fast >= prev_prev_ema_slow) and (last_ema_fast < last_ema_slow)
+            ema_converging = (last_ema_slow - last_ema_fast) > (prev_ema_slow - prev_ema_fast)  # Сближаются
+            ema_already_crossed = last_ema_fast < last_ema_slow  # Уже пересекли
+            ema_cross_ok = ema_crossed or ema_converging or ema_already_crossed  # Смягчено для большего количества сигналов
         
         if not ema_cross_ok:
             return None
@@ -360,8 +367,8 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         if len(vol) >= RECENT_CANDLES_LOOKBACK:
             recent_vols = vol.iloc[-RECENT_CANDLES_LOOKBACK:].astype(float)
             recent_avg_vol = float(recent_vols.mean())
-            # Объем за последние N свечей должен быть выше среднего (смягчено до 5%)
-            vol_recent_ok = recent_avg_vol > avg_vol * 1.05  # 5% выше среднего
+            # Объем за последние N свечей должен быть выше среднего (смягчено до 2%)
+            vol_recent_ok = recent_avg_vol > avg_vol * 1.02  # 2% выше среднего для большего количества сигналов
         
         if not vol_recent_ok:
             return None
