@@ -49,12 +49,12 @@ logging.info(f"Загружены настройки: TOP_N={TOP_N}, SCAN_INTERV
 TIMEFRAME_MAIN = os.getenv("TIMEFRAME_MAIN", "5m")
 TIMEFRAME_TREND = os.getenv("TIMEFRAME_TREND", "1h")
 
-RSI_LONG_MIN = float(os.getenv("RSI_LONG_MIN", "40"))  # Смягчено с 45 для большего количества сигналов
-RSI_LONG_MAX = float(os.getenv("RSI_LONG_MAX", "70"))  # Смягчено с 65 для большего количества сигналов
-RSI_SHORT_MIN = float(os.getenv("RSI_SHORT_MIN", "30"))  # Смягчено с 35 для большего количества сигналов
-RSI_SHORT_MAX = float(os.getenv("RSI_SHORT_MAX", "60"))  # Смягчено с 55 для большего количества сигналов
+RSI_LONG_MIN = float(os.getenv("RSI_LONG_MIN", "45"))  # Ужесточено для более точных сигналов
+RSI_LONG_MAX = float(os.getenv("RSI_LONG_MAX", "65"))  # Ужесточено для более точных сигналов
+RSI_SHORT_MIN = float(os.getenv("RSI_SHORT_MIN", "35"))  # Ужесточено для более точных сигналов
+RSI_SHORT_MAX = float(os.getenv("RSI_SHORT_MAX", "55"))  # Ужесточено для более точных сигналов
 
-VOL_SPIKE_MULTIPLIER = float(os.getenv("VOL_SPIKE_MULTIPLIER", "1.10"))  # Смягчено до 1.10 для большего количества сигналов
+VOL_SPIKE_MULTIPLIER = float(os.getenv("VOL_SPIKE_MULTIPLIER", "1.5"))  # Ужесточено до 1.5 для более качественных сигналов
 
 ATR_SL_MULTIPLIER = float(os.getenv("ATR_SL_MULTIPLIER", "1.5"))
 ATR_TP1_MULTIPLIER = float(os.getenv("ATR_TP1_MULTIPLIER", "2.0"))
@@ -62,15 +62,21 @@ ATR_TP2_MULTIPLIER = float(os.getenv("ATR_TP2_MULTIPLIER", "3.0"))
 
 BTC_TREND_FILTER = int(os.getenv("BTC_TREND_FILTER", "1"))
 
-# Параметры для раннего обнаружения движения (смягченные значения по умолчанию)
-MAX_24H_CHANGE = float(os.getenv("MAX_24H_CHANGE", "30.0"))  # Максимальное изменение за 24ч (увеличено для большего количества сигналов, 0=отключить фильтр)
-USE_MAX_24H_FILTER = int(os.getenv("USE_MAX_24H_FILTER", "0"))  # Использовать фильтр по максимальному изменению (0=выключено по умолчанию)
-RECENT_CANDLES_LOOKBACK = int(os.getenv("RECENT_CANDLES_LOOKBACK", "3"))  # Сколько свечей проверять для недавнего движения (уменьшено для более раннего обнаружения)
-MIN_RECENT_CHANGE_PCT = float(os.getenv("MIN_RECENT_CHANGE_PCT", "0.1"))  # Минимальное изменение за последние N свечи (%) (смягчено для большего количества сигналов)
+# Параметры для раннего обнаружения движения (улучшенные для точности)
+MAX_24H_CHANGE = float(os.getenv("MAX_24H_CHANGE", "25.0"))  # Максимальное изменение за 24ч (ужесточено для качества, 0=отключить фильтр)
+USE_MAX_24H_FILTER = int(os.getenv("USE_MAX_24H_FILTER", "1"))  # Использовать фильтр по максимальному изменению (1=включено для качества)
+RECENT_CANDLES_LOOKBACK = int(os.getenv("RECENT_CANDLES_LOOKBACK", "2"))  # Сколько свечей проверять для недавнего движения (уменьшено для более раннего обнаружения)
+MIN_RECENT_CHANGE_PCT = float(os.getenv("MIN_RECENT_CHANGE_PCT", "0.3"))  # Минимальное изменение за последние N свечи (%) (ужесточено для качества)
 RECENT_MOVE_CHECK = int(os.getenv("RECENT_MOVE_CHECK", "1"))  # Проверять недавнее движение (1=включено по умолчанию для раннего обнаружения)
 RSI_ENTRY_CHECK = int(os.getenv("RSI_ENTRY_CHECK", "1"))  # Проверять, что RSI только что вошел в зону (1=включено по умолчанию для раннего входа)
 EMA_CROSS_RECENT = int(os.getenv("EMA_CROSS_RECENT", "1"))  # Проверять недавнее пересечение EMA (1=включено по умолчанию для раннего обнаружения)
 VOL_RECENT_CHECK = int(os.getenv("VOL_RECENT_CHECK", "1"))  # Проверять недавний рост объема (1=включено по умолчанию для раннего обнаружения)
+
+# Новые параметры для улучшенной стратегии
+MAX_SIGNALS_PER_DAY = int(os.getenv("MAX_SIGNALS_PER_DAY", "10"))  # Максимальное количество сигналов в день
+USE_MACD = int(os.getenv("USE_MACD", "1"))  # Использовать MACD для подтверждения (1=включено)
+USE_ADX = int(os.getenv("USE_ADX", "1"))  # Использовать ADX для силы тренда (1=включено)
+MIN_ADX = float(os.getenv("MIN_ADX", "20.0"))  # Минимальный ADX для подтверждения тренда
 
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
     raise RuntimeError("Не задан TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID в .env")
@@ -117,6 +123,49 @@ def atr(df: pd.DataFrame, period: int = 14) -> pd.Series:
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     atr_series = tr.rolling(window=period, min_periods=period).mean()
     return atr_series
+
+
+def macd(series: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> Tuple[pd.Series, pd.Series, pd.Series]:
+    """Вычисляет MACD: возвращает (macd_line, signal_line, histogram)"""
+    ema_fast = ema(series, fast)
+    ema_slow = ema(series, slow)
+    macd_line = ema_fast - ema_slow
+    signal_line = ema(macd_line, signal)
+    histogram = macd_line - signal_line
+    return macd_line, signal_line, histogram
+
+
+def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
+    """Вычисляет ADX (Average Directional Index) для определения силы тренда"""
+    high = df["high"]
+    low = df["low"]
+    close = df["close"]
+    
+    # True Range
+    prev_close = close.shift(1)
+    tr1 = high - low
+    tr2 = (high - prev_close).abs()
+    tr3 = (low - prev_close).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    
+    # Directional Movement
+    plus_dm = high.diff()
+    minus_dm = -low.diff()
+    plus_dm[plus_dm < 0] = 0
+    minus_dm[minus_dm < 0] = 0
+    plus_dm[(plus_dm < minus_dm)] = 0
+    minus_dm[(minus_dm < plus_dm)] = 0
+    
+    # Smoothing
+    atr_smooth = tr.rolling(window=period).mean()
+    plus_di = 100 * (plus_dm.rolling(window=period).mean() / atr_smooth)
+    minus_di = 100 * (minus_dm.rolling(window=period).mean() / atr_smooth)
+    
+    # ADX
+    dx = 100 * (plus_di - minus_di).abs() / (plus_di + minus_di)
+    adx_series = dx.rolling(window=period).mean()
+    
+    return adx_series
 
 
 # =======================
@@ -185,6 +234,7 @@ class Signal:
     volume_24h: float
     change_24h: float
     tag: str
+    score: float = 0.0  # Оценка качества сигнала (0-100)
 
 
 # =======================
@@ -240,6 +290,70 @@ def detect_market_trend_btc() -> str:
         return "SIDE"
 
 
+def calculate_signal_score(
+    side: str,
+    rsi_val: float,
+    ema_fast_val: float,
+    ema_slow_val: float,
+    macd_hist: float,
+    adx_val: float,
+    vol_spike: bool,
+    momentum_ok: bool,
+    recent_change_pct: float,
+    price_change_24h: float,
+) -> float:
+    """Вычисляет оценку качества сигнала (0-100)"""
+    score = 0.0
+    
+    # RSI в оптимальной зоне (20 баллов)
+    if side == "LONG":
+        if 50 <= rsi_val <= 60:  # Идеальная зона для входа в LONG
+            score += 20
+        elif 45 <= rsi_val < 50 or 60 < rsi_val <= 65:
+            score += 10
+    else:  # SHORT
+        if 40 <= rsi_val <= 50:  # Идеальная зона для входа в SHORT
+            score += 20
+        elif 35 <= rsi_val < 40 or 50 < rsi_val <= 55:
+            score += 10
+    
+    # EMA пересечение и сила тренда (25 баллов)
+    if side == "LONG":
+        if ema_fast_val > ema_slow_val:
+            ema_diff_pct = ((ema_fast_val - ema_slow_val) / ema_slow_val) * 100
+            score += min(25, ema_diff_pct * 2)  # До 25 баллов за сильный тренд
+    else:  # SHORT
+        if ema_fast_val < ema_slow_val:
+            ema_diff_pct = ((ema_slow_val - ema_fast_val) / ema_slow_val) * 100
+            score += min(25, ema_diff_pct * 2)  # До 25 баллов за сильный тренд
+    
+    # MACD подтверждение (15 баллов)
+    if USE_MACD:
+        if side == "LONG" and macd_hist > 0:
+            score += 15
+        elif side == "SHORT" and macd_hist < 0:
+            score += 15
+    
+    # ADX сила тренда (15 баллов)
+    if USE_ADX:
+        if adx_val >= MIN_ADX:
+            score += min(15, (adx_val - MIN_ADX) / 2)  # До 15 баллов за сильный тренд
+    
+    # Объем (10 баллов)
+    if vol_spike:
+        score += 10
+    
+    # Momentum (10 баллов)
+    if momentum_ok:
+        score += 10
+    
+    # Недавнее движение (5 баллов)
+    if abs(recent_change_pct) >= MIN_RECENT_CHANGE_PCT:
+        score += 5
+    
+    return min(100.0, score)
+
+
 def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) -> Optional[Signal]:
     try:
         df_main = get_klines(symbol, TIMEFRAME_MAIN, limit=200)
@@ -256,21 +370,32 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
     ema_slow = ema(close, 26)  # Изменено с 50 на 26 для более раннего обнаружения
     rsi_series = rsi(close, 14)
     atr_series = atr(df_main, 14)
+    
+    # Добавляем MACD и ADX для улучшенной фильтрации
+    macd_line, macd_signal, macd_hist = macd(close, 12, 26, 9)
+    adx_series = adx(df_main, 14)
 
     last_close = float(close.iloc[-1])
     last_rsi = float(rsi_series.iloc[-1])
     last_ema_fast = float(ema_fast.iloc[-1])
     last_ema_slow = float(ema_slow.iloc[-1])
     last_atr = float(atr_series.iloc[-1])
+    last_macd_hist = float(macd_hist.iloc[-1]) if USE_MACD else 0.0
+    last_adx = float(adx_series.iloc[-1]) if USE_ADX else 0.0
 
     if any(math.isnan(x) for x in [last_rsi, last_ema_fast, last_ema_slow, last_atr]):
+        return None
+    
+    if USE_MACD and math.isnan(last_macd_hist):
+        return None
+    if USE_ADX and math.isnan(last_adx):
         return None
 
     avg_vol = float(vol.iloc[-50:].mean())
     last_vol = float(vol.iloc[-1])
     vol_spike = last_vol > VOL_SPIKE_MULTIPLIER * avg_vol if avg_vol > 0 else False
     
-    # Проверка momentum (ускорение цены) для раннего обнаружения
+    # Улучшенная проверка momentum (ускорение цены) для раннего обнаружения
     momentum_ok = False
     if len(close) >= 3:
         # Проверяем ускорение: цена должна расти/падать быстрее
@@ -278,11 +403,11 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_2 = (float(close.iloc[-2]) - float(close.iloc[-3])) / float(close.iloc[-3]) * 100
         
         if side == "LONG":
-            # Для LONG: ускорение роста ИЛИ просто рост (смягчено для большего количества сигналов)
-            momentum_ok = (price_change_1 > price_change_2 and price_change_1 > 0) or price_change_1 > 0.05  # Или просто рост > 0.05%
+            # Для LONG: требуется ускорение роста (более строго)
+            momentum_ok = price_change_1 > price_change_2 and price_change_1 > 0.15  # Ускорение и минимум 0.15%
         else:
-            # Для SHORT: ускорение падения ИЛИ просто падение (смягчено для большего количества сигналов)
-            momentum_ok = (price_change_1 < price_change_2 and price_change_1 < 0) or price_change_1 < -0.05  # Или просто падение > 0.05%
+            # Для SHORT: требуется ускорение падения (более строго)
+            momentum_ok = price_change_1 < price_change_2 and price_change_1 < -0.15  # Ускорение и минимум 0.15%
 
     # ========== ПРОВЕРКИ ДЛЯ РАННЕГО ОБНАРУЖЕНИЯ ДВИЖЕНИЯ (ОПЦИОНАЛЬНЫЕ) ==========
     
@@ -317,19 +442,17 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         prev_prev_rsi = float(rsi_series.iloc[-3])
         
         if side == "LONG":
-            # RSI должен был быть ниже зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 70%), ИЛИ просто в зоне и растет
+            # RSI должен был быть ниже зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 50%)
             rsi_just_entered = (prev_rsi < RSI_LONG_MIN or prev_prev_rsi < RSI_LONG_MIN) and (RSI_LONG_MIN <= last_rsi <= RSI_LONG_MAX)
-            rsi_in_early_zone = RSI_LONG_MIN <= last_rsi <= (RSI_LONG_MIN + (RSI_LONG_MAX - RSI_LONG_MIN) * 0.7)  # Первые 70% зоны (смягчено)
+            rsi_in_early_zone = RSI_LONG_MIN <= last_rsi <= (RSI_LONG_MIN + (RSI_LONG_MAX - RSI_LONG_MIN) * 0.5)  # Первые 50% зоны
             rsi_rising = last_rsi > prev_rsi  # RSI растет
-            rsi_in_zone = RSI_LONG_MIN <= last_rsi <= RSI_LONG_MAX  # Просто в зоне
-            rsi_entry_ok = (rsi_just_entered or rsi_in_early_zone or (rsi_in_zone and rsi_rising))  # Смягчено для большего количества сигналов
+            rsi_entry_ok = (rsi_just_entered or (rsi_in_early_zone and rsi_rising))  # Более строго
         else:
-            # RSI должен был быть выше зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 70%), ИЛИ просто в зоне и падает
+            # RSI должен был быть выше зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 50%)
             rsi_just_entered = (prev_rsi > RSI_SHORT_MAX or prev_prev_rsi > RSI_SHORT_MAX) and (RSI_SHORT_MIN <= last_rsi <= RSI_SHORT_MAX)
-            rsi_in_early_zone = (RSI_SHORT_MIN + (RSI_SHORT_MAX - RSI_SHORT_MIN) * 0.3) <= last_rsi <= RSI_SHORT_MAX  # Последние 70% зоны (смягчено)
+            rsi_in_early_zone = (RSI_SHORT_MIN + (RSI_SHORT_MAX - RSI_SHORT_MIN) * 0.5) <= last_rsi <= RSI_SHORT_MAX  # Последние 50% зоны
             rsi_falling = last_rsi < prev_rsi  # RSI падает
-            rsi_in_zone = RSI_SHORT_MIN <= last_rsi <= RSI_SHORT_MAX  # Просто в зоне
-            rsi_entry_ok = (rsi_just_entered or rsi_in_early_zone or (rsi_in_zone and rsi_falling))  # Смягчено для большего количества сигналов
+            rsi_entry_ok = (rsi_just_entered or (rsi_in_early_zone and rsi_falling))  # Более строго
         
         if not rsi_entry_ok:
             return None
@@ -346,17 +469,15 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         prev_prev_ema_slow = float(ema_slow.iloc[-3]) if len(ema_slow) >= 3 else prev_ema_slow
         
         if side == "LONG":
-            # EMA должны были пересечься недавно, ИЛИ сближаются, ИЛИ уже пересекли (смягчено)
+            # EMA должны были пересечься недавно (более строго)
             ema_crossed = (prev_ema_fast <= prev_ema_slow or prev_prev_ema_fast <= prev_prev_ema_slow) and (last_ema_fast > last_ema_slow)
             ema_converging = (last_ema_fast - last_ema_slow) > (prev_ema_fast - prev_ema_slow)  # Сближаются
-            ema_already_crossed = last_ema_fast > last_ema_slow  # Уже пересекли
-            ema_cross_ok = ema_crossed or ema_converging or ema_already_crossed  # Смягчено для большего количества сигналов
+            ema_cross_ok = ema_crossed or (ema_converging and last_ema_fast > last_ema_slow * 0.998)  # Почти пересекли
         else:
             # Для SHORT: аналогично
             ema_crossed = (prev_ema_fast >= prev_ema_slow or prev_prev_ema_fast >= prev_prev_ema_slow) and (last_ema_fast < last_ema_slow)
             ema_converging = (last_ema_slow - last_ema_fast) > (prev_ema_slow - prev_ema_fast)  # Сближаются
-            ema_already_crossed = last_ema_fast < last_ema_slow  # Уже пересекли
-            ema_cross_ok = ema_crossed or ema_converging or ema_already_crossed  # Смягчено для большего количества сигналов
+            ema_cross_ok = ema_crossed or (ema_converging and last_ema_fast < last_ema_slow * 1.002)  # Почти пересекли
         
         if not ema_cross_ok:
             return None
@@ -367,8 +488,8 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         if len(vol) >= RECENT_CANDLES_LOOKBACK:
             recent_vols = vol.iloc[-RECENT_CANDLES_LOOKBACK:].astype(float)
             recent_avg_vol = float(recent_vols.mean())
-            # Объем за последние N свечей должен быть выше среднего (смягчено до 2%)
-            vol_recent_ok = recent_avg_vol > avg_vol * 1.02  # 2% выше среднего для большего количества сигналов
+            # Объем за последние N свечей должен быть выше среднего (ужесточено до 5%)
+            vol_recent_ok = recent_avg_vol > avg_vol * 1.05  # 5% выше среднего для качества
         
         if not vol_recent_ok:
             return None
@@ -380,7 +501,6 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
 
     if side == "LONG":
         # Для раннего обнаружения: EMA быстрая должна быть близка к медленной или выше
-        # Принимаем сигнал если EMA быстрая растет быстрее медленной (даже если еще не пересекла)
         ema_fast_prev = float(ema_fast.iloc[-2]) if len(ema_fast) >= 2 else last_ema_fast
         ema_slow_prev = float(ema_slow.iloc[-2]) if len(ema_slow) >= 2 else last_ema_slow
         ema_converging = (last_ema_fast > last_ema_slow) or \
@@ -397,18 +517,47 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         rsi_ok = RSI_SHORT_MIN <= last_rsi <= RSI_SHORT_MAX
 
     # Основные проверки: тренд, RSI, и (всплеск объема ИЛИ momentum)
-    # Дополнительные проверки (недавнее движение, RSI вход, EMA пересечение, объем) опциональны
-    # Для раннего обнаружения принимаем сигнал если есть momentum даже без большого всплеска объема
     volume_or_momentum_ok = vol_spike or momentum_ok
     
     if not (trend_ok and rsi_ok and volume_or_momentum_ok):
         return None
+    
+    # Проверка MACD для подтверждения тренда
+    if USE_MACD:
+        if side == "LONG" and last_macd_hist <= 0:
+            return None
+        if side == "SHORT" and last_macd_hist >= 0:
+            return None
+    
+    # Проверка ADX для силы тренда
+    if USE_ADX:
+        if last_adx < MIN_ADX:
+            return None
 
     if BTC_TREND_FILTER and market_trend in ("UP", "DOWN"):
         if side == "LONG" and market_trend == "DOWN":
             return None
         if side == "SHORT" and market_trend == "UP":
             return None
+    
+    # Вычисляем оценку качества сигнала
+    price_change_24h = float(ticker_row["priceChangePercent"])
+    signal_score = calculate_signal_score(
+        side=side,
+        rsi_val=last_rsi,
+        ema_fast_val=last_ema_fast,
+        ema_slow_val=last_ema_slow,
+        macd_hist=last_macd_hist,
+        adx_val=last_adx,
+        vol_spike=vol_spike,
+        momentum_ok=momentum_ok,
+        recent_change_pct=recent_change_pct,
+        price_change_24h=price_change_24h,
+    )
+    
+    # Минимальная оценка для принятия сигнала (ужесточено)
+    if signal_score < 40.0:  # Минимум 40 баллов для принятия сигнала
+        return None
 
     if side == "LONG":
         entry = last_close
@@ -446,7 +595,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
     tag = ", ".join(tag_parts) if tag_parts else "Normal"
 
     # Формируем причину с учетом раннего обнаружения
-    reason_parts = ["Early entry"]
+    reason_parts = [f"Score: {signal_score:.1f}"]
     if momentum_ok:
         reason_parts.append("Momentum")
     if EMA_CROSS_RECENT:
@@ -455,6 +604,10 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         reason_parts.append("RSI entry")
     if vol_spike:
         reason_parts.append("Volume spike")
+    if USE_MACD:
+        reason_parts.append("MACD confirm")
+    if USE_ADX:
+        reason_parts.append(f"ADX {last_adx:.1f}")
     reason_parts.append(f"Trend ({TIMEFRAME_MAIN})")
     reason = " | ".join(reason_parts)
     
@@ -476,6 +629,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         volume_24h=float(ticker_row["quoteVolume"]),
         change_24h=price_change,
         tag=tag,
+        score=signal_score,
     )
 
 
@@ -505,6 +659,7 @@ def format_signals_message(
         return (
             f"{sig.symbol} {sig.side}\n"
             f"\n"
+            f"⭐ Score: {sig.score:.1f}/100\n"
             f"🏷 Tag: {sig.tag}\n"
             f"\n"
             f"📊 24h Change: {sig.change_24h:+.2f}%\n"
@@ -564,7 +719,7 @@ def format_signals_message_console(
         rr2 = abs((sig.tp2 - sig.entry) / (sig.entry - sig.sl)) if sig.entry != sig.sl else 0
 
         return (
-            f"{sig.symbol} {sig.side}\n"
+            f"{sig.symbol} {sig.side} ⭐{sig.score:.1f}\n"
             f"• Tag: {sig.tag}\n"
             f"• 24h Chg: {sig.change_24h:+.2f}%\n"
             f"• Price: {sig.last_price:.6g}\n"
@@ -832,7 +987,7 @@ def run_once():
         sig = build_signal(sym, "LONG", row, market_trend)
         if sig:
             gain_signals.append(sig)
-            iteration_logs.append(f"LONG {sym} - сигнал найден")
+            iteration_logs.append(f"LONG {sym} - сигнал найден (score: {sig.score:.1f})")
 
     for row in losers:
         sym = row["symbol"]
@@ -841,10 +996,31 @@ def run_once():
         sig = build_signal(sym, "SHORT", row, market_trend)
         if sig:
             loss_signals.append(sig)
-            iteration_logs.append(f"SHORT {sym} - сигнал найден")
+            iteration_logs.append(f"SHORT {sym} - сигнал найден (score: {sig.score:.1f})")
+    
+    # Сортируем сигналы по оценке качества и ограничиваем количество
+    gain_signals.sort(key=lambda x: x.score, reverse=True)
+    loss_signals.sort(key=lambda x: x.score, reverse=True)
+    
+    # Ограничиваем количество сигналов (максимум MAX_SIGNALS_PER_DAY в день)
+    # Распределяем поровну между LONG и SHORT, но приоритет лучшим
+    max_per_side = MAX_SIGNALS_PER_DAY // 2
+    if len(gain_signals) > max_per_side:
+        gain_signals = gain_signals[:max_per_side]
+    if len(loss_signals) > max_per_side:
+        loss_signals = loss_signals[:max_per_side]
+    
+    # Если одна сторона пустая, можно дать больше другой (но не больше MAX_SIGNALS_PER_DAY)
+    total_signals = len(gain_signals) + len(loss_signals)
+    if total_signals > MAX_SIGNALS_PER_DAY:
+        # Урезаем худшие сигналы
+        if len(gain_signals) > len(loss_signals):
+            gain_signals = gain_signals[:MAX_SIGNALS_PER_DAY - len(loss_signals)]
+        else:
+            loss_signals = loss_signals[:MAX_SIGNALS_PER_DAY - len(gain_signals)]
     
     iteration_logs.append(f"Проверено символов: {len(checked_symbols)}")
-    iteration_logs.append(f"Найдено сигналов: LONG={len(gain_signals)}, SHORT={len(loss_signals)}")
+    iteration_logs.append(f"Найдено сигналов: LONG={len(gain_signals)}, SHORT={len(loss_signals)} (после фильтрации)")
 
     msg = format_signals_message(market_trend, gain_signals, loss_signals)
     msg_console = format_signals_message_console(market_trend, gain_signals, loss_signals)
