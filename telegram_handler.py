@@ -18,11 +18,14 @@ def format_signals_message(
     loss_signals: List[Signal],
 ) -> str:
     """Форматирует сообщение для отправки в .txt файл (без HTML тегов)"""
+    import config
+    exchange_name = config.EXCHANGE.upper()
+    
     if not gain_signals and not loss_signals:
-        return "🤖 Binance Top Movers\n\nСигналов по фильтрам пока нет. Рынок спит."
+        return f"🤖 {exchange_name} Top Movers\n\nСигналов по фильтрам пока нет. Рынок спит."
 
     lines = []
-    lines.append("🤖 Binance Futures Top Movers Signals")
+    lines.append(f"🤖 {exchange_name} Futures Top Movers Signals")
     lines.append("")
     lines.append(f"🌍 Market (BTC {config.TIMEFRAME_TREND}): {market_trend}")
     lines.append("")
@@ -80,11 +83,14 @@ def format_signals_message_console(
     loss_signals: List[Signal],
 ) -> str:
     """Форматирует сообщение для вывода в консоль (без HTML-тегов)"""
+    import config
+    exchange_name = config.EXCHANGE.upper()
+    
     if not gain_signals and not loss_signals:
-        return "🤖 Binance Top Movers\n\nСигналов по фильтрам пока нет. Рынок спит."
+        return f"🤖 {exchange_name} Top Movers\n\nСигналов по фильтрам пока нет. Рынок спит."
 
     lines = []
-    lines.append("🤖 Binance Futures Top Movers Signals")
+    lines.append(f"🤖 {exchange_name} Futures Top Movers Signals")
     lines.append("")
     lines.append(f"🌍 Market (BTC {config.TIMEFRAME_TREND}): {market_trend}")
     lines.append("")

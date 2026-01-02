@@ -1,14 +1,22 @@
-"""Основной модуль бота для отслеживания топ-муверов на Binance Futures"""
+"""Основной модуль бота для отслеживания топ-муверов на ByBit/Binance Futures"""
 import time
 import logging
 from datetime import datetime
 from typing import List, Dict
 
 import config
-import binance_api
 import signal_logic
 import telegram_handler
 from models import Signal
+
+# Импортируем API в зависимости от выбранной биржи
+if config.EXCHANGE == "bybit":
+    import bybit_api as exchange_api
+    import bybit_trading
+else:
+    import binance_api as exchange_api
+    # Для Binance торговля пока не реализована
+    bybit_trading = None
 
 # Настройка логирования уже выполнена в config.py
 
@@ -21,7 +29,7 @@ def run_once():
     logging.info("Старт сканирования Top Movers...")
     iteration_logs.append("Старт сканирования Top Movers...")
     
-    tickers = binance_api.get_24h_tickers()
+    tickers = exchange_api.get_24h_tickers()
     gainers, losers = signal_logic.select_top_movers(tickers)
     logging.info("Отобрано gainers=%d, losers=%d", len(gainers), len(losers))
     iteration_logs.append(f"Отобрано gainers={len(gainers)}, losers={len(losers)}")
@@ -120,6 +128,30 @@ def run_once():
             try:
                 telegram_handler.send_telegram_files(signals_files_to_send, chat_ids)
                 logging.info("Отправлены файлы сигналов в Telegram.")
+                
+                # Открываем позиции на бирже для каждого сигнала (только для ByBit)
+                if config.EXCHANGE == "bybit" and config.BYBIT_ENABLE_TRADING:
+                    trader = bybit_trading.get_trader()
+                    if trader.enabled:
+                        all_signals = gain_signals + loss_signals
+                        for signal in all_signals:
+                            try:
+                                result = trader.place_order(signal, risk_percent=config.BYBIT_RISK_PERCENT)
+                                if result:
+                                    logging.info(f"✅ Позиция открыта: {signal.side} {signal.symbol} | Entry: {signal.entry:.6g} | SL: {signal.sl:.6g} | TP1: {signal.tp1:.6g} | TP2: {signal.tp2:.6g}")
+                                    iteration_logs.append(f"✅ Позиция открыта: {signal.side} {signal.symbol}")
+                                else:
+                                    logging.warning(f"❌ Не удалось открыть позицию для {signal.side} {signal.symbol}")
+                                    iteration_logs.append(f"❌ Не удалось открыть позицию: {signal.side} {signal.symbol}")
+                            except Exception as e:
+                                logging.error(f"Ошибка при открытии позиции для {signal.symbol}: {e}", exc_info=True)
+                                iteration_logs.append(f"❌ Ошибка открытия позиции {signal.symbol}: {str(e)}")
+                    else:
+                        logging.warning("ByBit торговля отключена (нет API ключей)")
+                elif config.EXCHANGE == "bybit" and not config.BYBIT_ENABLE_TRADING:
+                    logging.info("ByBit торговля отключена в настройках (BYBIT_ENABLE_TRADING=0)")
+                elif config.EXCHANGE == "binance":
+                    logging.info("Автоматическая торговля для Binance пока не реализована")
             except Exception as e:
                 logging.error(f"КРИТИЧЕСКАЯ ОШИБКА при отправке сигналов: {e}", exc_info=True)
     except Exception as e:
@@ -128,7 +160,8 @@ def run_once():
 
 def main():
     """Главная функция - запускает бесконечный цикл сканирования"""
-    logging.info("Запускаем Binance Top Movers bot (FULL mode).")
+    exchange_name = config.EXCHANGE.upper()
+    logging.info(f"Запускаем {exchange_name} Top Movers bot (FULL mode).")
     logging.info(f"Текущие настройки: TOP_N={config.TOP_N}, SCAN_INTERVAL_SECONDS={config.SCAN_INTERVAL_SECONDS}")
     while True:
         try:

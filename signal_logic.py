@@ -5,9 +5,14 @@ import pandas as pd
 from typing import List, Dict, Tuple, Optional
 
 import config
-import binance_api
 import indicators
 from models import Signal
+
+# Импортируем API в зависимости от выбранной биржи
+if config.EXCHANGE == "bybit":
+    import bybit_api as exchange_api
+else:
+    import binance_api as exchange_api
 
 
 def select_top_movers(tickers: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
@@ -36,7 +41,7 @@ def select_top_movers(tickers: List[Dict]) -> Tuple[List[Dict], List[Dict]]:
 def detect_market_trend_btc() -> str:
     """Определяет общий тренд рынка по BTC"""
     try:
-        df = binance_api.get_klines("BTCUSDT", config.TIMEFRAME_TREND, limit=200)
+        df = exchange_api.get_klines("BTCUSDT", config.TIMEFRAME_TREND, limit=200)
     except Exception as e:
         logging.warning("Не удалось получить BTCUSDT для тренда: %s", e)
         return "UNKNOWN"
@@ -128,8 +133,8 @@ def calculate_signal_score(
 def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) -> Optional[Signal]:
     """Строит торговый сигнал для символа"""
     try:
-        df_main = binance_api.get_klines(symbol, config.TIMEFRAME_MAIN, limit=200)
-        _ = binance_api.get_klines(symbol, config.TIMEFRAME_TREND, limit=200)
+        df_main = exchange_api.get_klines(symbol, config.TIMEFRAME_MAIN, limit=200)
+        _ = exchange_api.get_klines(symbol, config.TIMEFRAME_TREND, limit=200)
     except Exception as e:
         logging.warning("Klines error for %s: %s", symbol, e)
         return None

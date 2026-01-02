@@ -12,8 +12,25 @@ logging.basicConfig(
 # Загрузка переменных окружения
 load_dotenv()
 
+# Выбор биржи: "bybit" или "binance" (по умолчанию bybit)
+EXCHANGE = os.getenv("EXCHANGE", "bybit").lower()
+
 # Binance API
-BINANCE_FUTURES_BASE = "https://fapi.binance.com"
+BINANCE_FUTURES_BASE = os.getenv("BINANCE_FUTURES_BASE", "https://fapi.binance.com")
+
+# ByBit API (demo/testnet)
+BYBIT_FUTURES_BASE = os.getenv("BYBIT_FUTURES_BASE", "https://api-testnet.bybit.com")
+BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
+BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
+BYBIT_ENABLE_TRADING = int(os.getenv("BYBIT_ENABLE_TRADING", "1"))  # 1 = включено, 0 = выключено
+BYBIT_RISK_PERCENT = float(os.getenv("BYBIT_RISK_PERCENT", "1.0"))  # Процент баланса для риска на сделку
+
+# Валидация выбора биржи
+if EXCHANGE not in ["bybit", "binance"]:
+    logging.warning(f"Неизвестная биржа '{EXCHANGE}', используем 'bybit' по умолчанию")
+    EXCHANGE = "bybit"
+
+logging.info(f"Используется биржа: {EXCHANGE.upper()}")
 
 # Telegram настройки
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
