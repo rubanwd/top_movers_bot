@@ -199,20 +199,29 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
     recent_move_ok = True  # По умолчанию пропускаем, если проверка выключена
     if config.RECENT_MOVE_CHECK:
         if len(close) < config.RECENT_CANDLES_LOOKBACK + 1:
+            logging.debug(f"{symbol} {side}: недостаточно данных для RECENT_MOVE_CHECK")
             return None
         
+        # Более гибкая проверка: для 5m таймфрейма изменения обычно небольшие
+        # Принимаем если движение в правильном направлении и составляет хотя бы 50% от минимума
         if side == "LONG":
-            recent_move_ok = recent_change_pct >= config.MIN_RECENT_CHANGE_PCT
+            # Для LONG: принимаем если изменение >= минимума ИЛИ если положительное и >= 50% минимума
+            recent_move_ok = recent_change_pct >= config.MIN_RECENT_CHANGE_PCT or \
+                           (recent_change_pct > 0 and recent_change_pct >= config.MIN_RECENT_CHANGE_PCT * 0.5)
         else:
-            recent_move_ok = recent_change_pct <= -config.MIN_RECENT_CHANGE_PCT
+            # Для SHORT: аналогично
+            recent_move_ok = recent_change_pct <= -config.MIN_RECENT_CHANGE_PCT or \
+                           (recent_change_pct < 0 and recent_change_pct <= -config.MIN_RECENT_CHANGE_PCT * 0.5)
         
         if not recent_move_ok:
+            logging.info(f"{symbol} {side}: ❌ RECENT_MOVE не прошел (изменение: {recent_change_pct:.2f}%, требуется: {config.MIN_RECENT_CHANGE_PCT}%)")
             return None
     
     # 2. Проверка, что RSI только что вошел в нужную зону - ОПЦИОНАЛЬНО
     rsi_entry_ok = True
     if config.RSI_ENTRY_CHECK:
         if len(rsi_series) < 3:
+            logging.debug(f"{symbol} {side}: недостаточно данных для RSI_ENTRY_CHECK")
             return None
         
         prev_rsi = float(rsi_series.iloc[-2])
@@ -232,12 +241,14 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
             rsi_entry_ok = (rsi_just_entered or (rsi_in_early_zone and rsi_falling))  # Более строго
         
         if not rsi_entry_ok:
+            logging.info(f"{symbol} {side}: ❌ RSI_ENTRY не прошел (RSI: {last_rsi:.1f}, prev: {prev_rsi:.1f})")
             return None
     
     # 3. Проверка недавнего пересечения EMA - ОПЦИОНАЛЬНО
     ema_cross_ok = True
     if config.EMA_CROSS_RECENT:
         if len(ema_fast) < 3 or len(ema_slow) < 3:
+            logging.debug(f"{symbol} {side}: недостаточно данных для EMA_CROSS_RECENT")
             return None
         
         prev_ema_fast = float(ema_fast.iloc[-2])
@@ -257,6 +268,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
             ema_cross_ok = ema_crossed or (ema_converging and last_ema_fast < last_ema_slow * 1.002)  # Почти пересекли
         
         if not ema_cross_ok:
+            logging.info(f"{symbol} {side}: ❌ EMA_CROSS не прошел (EMA12: {last_ema_fast:.6g}, EMA26: {last_ema_slow:.6g})")
             return None
     
     # 4. Проверка, что объем начал расти недавно - ОПЦИОНАЛЬНО
@@ -269,6 +281,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
             vol_recent_ok = recent_avg_vol > avg_vol * 1.05  # 5% выше среднего для качества
         
         if not vol_recent_ok:
+            logging.info(f"{symbol} {side}: ❌ VOL_RECENT не прошел (recent_avg: {recent_avg_vol:.0f}, avg: {avg_vol:.0f})")
             return None
     
     # ========== ОСНОВНЫЕ ПРОВЕРКИ ==========
@@ -297,24 +310,37 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
     volume_or_momentum_ok = vol_spike or momentum_ok
     
     if not (trend_ok and rsi_ok and volume_or_momentum_ok):
+        failed_checks = []
+        if not trend_ok:
+            failed_checks.append(f"trend (EMA12: {last_ema_fast:.6g}, EMA26: {last_ema_slow:.6g})")
+        if not rsi_ok:
+            failed_checks.append(f"RSI ({last_rsi:.1f}, требуется {config.RSI_LONG_MIN if side == 'LONG' else config.RSI_SHORT_MIN}-{config.RSI_LONG_MAX if side == 'LONG' else config.RSI_SHORT_MAX})")
+        if not volume_or_momentum_ok:
+            failed_checks.append(f"volume/momentum (vol_spike: {vol_spike}, momentum: {momentum_ok})")
+        logging.info(f"{symbol} {side}: ❌ основные проверки не прошли: {', '.join(failed_checks)}")
         return None
     
     # Проверка MACD для подтверждения тренда
     if config.USE_MACD:
         if side == "LONG" and last_macd_hist <= 0:
+            logging.info(f"{symbol} {side}: ❌ MACD не подтверждает (hist: {last_macd_hist:.6g})")
             return None
         if side == "SHORT" and last_macd_hist >= 0:
+            logging.info(f"{symbol} {side}: ❌ MACD не подтверждает (hist: {last_macd_hist:.6g})")
             return None
     
     # Проверка ADX для силы тренда
     if config.USE_ADX:
         if last_adx < config.MIN_ADX:
+            logging.info(f"{symbol} {side}: ❌ ADX слишком слабый ({last_adx:.1f} < {config.MIN_ADX})")
             return None
 
     if config.BTC_TREND_FILTER and market_trend in ("UP", "DOWN"):
         if side == "LONG" and market_trend == "DOWN":
+            logging.info(f"{symbol} {side}: ❌ BTC тренд фильтр (BTC: {market_trend})")
             return None
         if side == "SHORT" and market_trend == "UP":
+            logging.info(f"{symbol} {side}: ❌ BTC тренд фильтр (BTC: {market_trend})")
             return None
     
     # Вычисляем оценку качества сигнала
@@ -332,8 +358,10 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_24h=price_change_24h,
     )
     
-    # Минимальная оценка для принятия сигнала (ужесточено)
-    if signal_score < 40.0:  # Минимум 40 баллов для принятия сигнала
+    # Минимальная оценка для принятия сигнала
+    MIN_SCORE_THRESHOLD = 30.0  # Понижено с 40 до 30 для более частых сигналов
+    if signal_score < MIN_SCORE_THRESHOLD:
+        logging.info(f"{symbol} {side}: ❌ score слишком низкий ({signal_score:.1f} < {MIN_SCORE_THRESHOLD})")
         return None
 
     if side == "LONG":

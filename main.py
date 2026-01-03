@@ -50,6 +50,9 @@ def run_once():
         if sig:
             gain_signals.append(sig)
             iteration_logs.append(f"LONG {sym} - сигнал найден (score: {sig.score:.1f})")
+            logging.info("✅ LONG %s - сигнал принят (score: %.1f)", sym, sig.score)
+        else:
+            logging.info("❌ LONG %s - сигнал отклонен", sym)
 
     for row in losers:
         sym = row["symbol"]
@@ -59,6 +62,9 @@ def run_once():
         if sig:
             loss_signals.append(sig)
             iteration_logs.append(f"SHORT {sym} - сигнал найден (score: {sig.score:.1f})")
+            logging.info("✅ SHORT %s - сигнал принят (score: %.1f)", sym, sig.score)
+        else:
+            logging.info("❌ SHORT %s - сигнал отклонен", sym)
     
     # Сортируем сигналы по оценке качества и ограничиваем количество
     gain_signals.sort(key=lambda x: x.score, reverse=True)
@@ -134,14 +140,18 @@ def run_once():
                     trader = bybit_trading.get_trader()
                     if trader.enabled:
                         all_signals = gain_signals + loss_signals
+                        logging.info(f"Попытка открыть {len(all_signals)} позиций...")
+                        if len(all_signals) == 0:
+                            logging.warning("⚠️ Нет сигналов для открытия позиций!")
                         for signal in all_signals:
                             try:
+                                logging.info(f"Открываем позицию: {signal.side} {signal.symbol} (score: {signal.score:.1f})")
                                 result = trader.place_order(signal, risk_percent=config.BYBIT_RISK_PERCENT)
                                 if result:
                                     logging.info(f"✅ Позиция открыта: {signal.side} {signal.symbol} | Entry: {signal.entry:.6g} | SL: {signal.sl:.6g} | TP1: {signal.tp1:.6g} | TP2: {signal.tp2:.6g}")
                                     iteration_logs.append(f"✅ Позиция открыта: {signal.side} {signal.symbol}")
                                 else:
-                                    logging.warning(f"❌ Не удалось открыть позицию для {signal.side} {signal.symbol}")
+                                    logging.warning(f"❌ Не удалось открыть позицию для {signal.side} {signal.symbol} (результат: None)")
                                     iteration_logs.append(f"❌ Не удалось открыть позицию: {signal.side} {signal.symbol}")
                             except Exception as e:
                                 logging.error(f"Ошибка при открытии позиции для {signal.symbol}: {e}", exc_info=True)

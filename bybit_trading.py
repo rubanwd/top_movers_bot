@@ -119,18 +119,23 @@ class ByBitTrader:
                     break
             
             if total_equity == 0:
-                logging.warning("Баланс USDT равен 0")
+                logging.warning(f"❌ Баланс USDT равен 0 для {symbol}")
                 return 0.0
+            
+            logging.info(f"Баланс USDT: {total_equity:.2f}")
             
             # Рассчитываем риск в долларах
             risk_amount = total_equity * (risk_percent / 100.0)
+            logging.info(f"Риск на сделку: ${risk_amount:.2f} ({risk_percent}% от баланса ${total_equity:.2f})")
             
             # Рассчитываем риск на контракт
             risk_per_contract = abs(entry_price - sl_price)
             
             if risk_per_contract == 0:
-                logging.warning("Риск на контракт равен 0")
+                logging.warning(f"❌ Риск на контракт равен 0 для {symbol} (entry: {entry_price:.6g}, SL: {sl_price:.6g})")
                 return 0.0
+            
+            logging.info(f"Риск на контракт: {risk_per_contract:.6g}")
             
             # Получаем информацию о символе для получения размера лота
             symbol_info = self.get_symbol_info(symbol)
@@ -147,14 +152,20 @@ class ByBitTrader:
             
             # Рассчитываем количество контрактов
             qty = risk_amount / risk_per_contract
+            logging.info(f"Предварительный размер позиции: {qty:.6g} контрактов")
             
             # Округляем до шага лота
             qty = round(qty / qty_step) * qty_step
+            logging.info(f"После округления до шага {qty_step}: {qty:.6g}")
             
             # Минимальный размер позиции
             min_qty = float(lot_size_filter.get("minQty", 0)) if lot_size_filter else 0.0
             if qty < min_qty and min_qty > 0:
+                logging.info(f"Размер позиции меньше минимума ({qty:.6g} < {min_qty}), устанавливаем минимум")
                 qty = min_qty
+            
+            if qty == 0:
+                logging.warning(f"❌ Итоговый размер позиции равен 0 для {symbol} (возможно, риск слишком мал)")
             
             return qty
             
@@ -188,15 +199,17 @@ class ByBitTrader:
             
             # Рассчитываем размер позиции если не задан
             if qty is None:
+                logging.info(f"Рассчитываем размер позиции для {signal.symbol} (риск: {risk_percent}%, entry: {signal.entry:.6g}, SL: {signal.sl:.6g})")
                 qty = self.calculate_position_size(
                     signal.symbol,
                     signal.entry,
                     signal.sl,
                     risk_percent
                 )
+                logging.info(f"Рассчитанный размер позиции для {signal.symbol}: {qty}")
             
             if qty == 0:
-                logging.warning(f"Размер позиции для {signal.symbol} равен 0, пропускаем")
+                logging.warning(f"❌ Размер позиции для {signal.symbol} равен 0, пропускаем (возможно, недостаточно баланса или проблема с расчетом)")
                 return None
             
             # Открываем рыночную позицию

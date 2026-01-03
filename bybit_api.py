@@ -86,10 +86,24 @@ def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
     # ByBit возвращает данные в обратном порядке (новые первыми), нужно перевернуть
     klines.reverse()
     
-    # ByBit формат: [startTime, open, high, low, close, volume, turnover]
-    df = pd.DataFrame(klines, columns=[
-        "startTime", "open", "high", "low", "close", "volume", "turnover", "ignore"
-    ])
+    # ByBit v5 формат: [startTime, open, high, low, close, volume, turnover] - 7 колонок
+    # Проверяем количество колонок в данных
+    if klines and len(klines) > 0:
+        num_cols = len(klines[0])
+        if num_cols == 7:
+            # Стандартный формат ByBit v5
+            df = pd.DataFrame(klines, columns=[
+                "startTime", "open", "high", "low", "close", "volume", "turnover"
+            ])
+        elif num_cols == 8:
+            # Если есть дополнительная колонка (старый формат или расширенный)
+            df = pd.DataFrame(klines, columns=[
+                "startTime", "open", "high", "low", "close", "volume", "turnover", "ignore"
+            ])
+        else:
+            raise RuntimeError(f"Неожиданный формат данных от ByBit: {num_cols} колонок для {symbol}")
+    else:
+        raise RuntimeError(f"Пустые данные klines для {symbol}")
     
     # Конвертируем в числовые типы
     df["open_time"] = pd.to_numeric(df["startTime"], errors="coerce")
