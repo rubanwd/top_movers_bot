@@ -180,11 +180,11 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_2 = (float(close.iloc[-2]) - float(close.iloc[-3])) / float(close.iloc[-3]) * 100
         
         if side == "LONG":
-            # Для LONG: требуется ускорение роста (более строго)
-            momentum_ok = price_change_1 > price_change_2 and price_change_1 > 0.15  # Ускорение и минимум 0.15%
+            # Для LONG: требуется ускорение роста (ослаблено для 5m таймфрейма)
+            momentum_ok = price_change_1 > price_change_2 and price_change_1 > 0.05  # Ускорение и минимум 0.05% (было 0.15%)
         else:
-            # Для SHORT: требуется ускорение падения (более строго)
-            momentum_ok = price_change_1 < price_change_2 and price_change_1 < -0.15  # Ускорение и минимум 0.15%
+            # Для SHORT: требуется ускорение падения (ослаблено для 5m таймфрейма)
+            momentum_ok = price_change_1 < price_change_2 and price_change_1 < -0.05  # Ускорение и минимум 0.05% (было 0.15%)
 
     # ========== ПРОВЕРКИ ДЛЯ РАННЕГО ОБНАРУЖЕНИЯ ДВИЖЕНИЯ (ОПЦИОНАЛЬНЫЕ) ==========
     
@@ -358,8 +358,8 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_24h=price_change_24h,
     )
     
-    # Минимальная оценка для принятия сигнала
-    MIN_SCORE_THRESHOLD = 30.0  # Понижено с 40 до 30 для более частых сигналов
+    # Минимальная оценка для принятия сигнала (понижено для более частых сигналов)
+    MIN_SCORE_THRESHOLD = 20.0  # Понижено с 30 до 20 для более частых сигналов
     if signal_score < MIN_SCORE_THRESHOLD:
         logging.info(f"{symbol} {side}: ❌ score слишком низкий ({signal_score:.1f} < {MIN_SCORE_THRESHOLD})")
         return None

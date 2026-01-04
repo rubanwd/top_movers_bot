@@ -61,31 +61,33 @@ RSI_LONG_MAX = float(os.getenv("RSI_LONG_MAX", "65"))
 RSI_SHORT_MIN = float(os.getenv("RSI_SHORT_MIN", "35"))
 RSI_SHORT_MAX = float(os.getenv("RSI_SHORT_MAX", "55"))
 
-# Объем
-VOL_SPIKE_MULTIPLIER = float(os.getenv("VOL_SPIKE_MULTIPLIER", "1.5"))
+# Объем (понижен множитель для более частых сигналов)
+VOL_SPIKE_MULTIPLIER = float(os.getenv("VOL_SPIKE_MULTIPLIER", "1.2"))  # Изменено с 1.5 на 1.2
 
 # ATR множители для SL/TP
 ATR_SL_MULTIPLIER = float(os.getenv("ATR_SL_MULTIPLIER", "1.5"))
 ATR_TP1_MULTIPLIER = float(os.getenv("ATR_TP1_MULTIPLIER", "2.0"))
 ATR_TP2_MULTIPLIER = float(os.getenv("ATR_TP2_MULTIPLIER", "3.0"))
 
-# Фильтр тренда BTC
-BTC_TREND_FILTER = int(os.getenv("BTC_TREND_FILTER", "1"))
+# Фильтр тренда BTC (отключен по умолчанию для более частых сигналов)
+BTC_TREND_FILTER = int(os.getenv("BTC_TREND_FILTER", "0"))  # Изменено с 1 на 0
 
 # Параметры для раннего обнаружения движения
 MAX_24H_CHANGE = float(os.getenv("MAX_24H_CHANGE", "25.0"))
 USE_MAX_24H_FILTER = int(os.getenv("USE_MAX_24H_FILTER", "1"))
 RECENT_CANDLES_LOOKBACK = int(os.getenv("RECENT_CANDLES_LOOKBACK", "2"))
 MIN_RECENT_CHANGE_PCT = float(os.getenv("MIN_RECENT_CHANGE_PCT", "0.1"))  # Понижено с 0.3 до 0.1 для 5m таймфрейма
-RECENT_MOVE_CHECK = int(os.getenv("RECENT_MOVE_CHECK", "1"))
-RSI_ENTRY_CHECK = int(os.getenv("RSI_ENTRY_CHECK", "1"))
-EMA_CROSS_RECENT = int(os.getenv("EMA_CROSS_RECENT", "1"))
-VOL_RECENT_CHECK = int(os.getenv("VOL_RECENT_CHECK", "1"))
+# Отключаем строгие проверки по умолчанию для более частых сигналов
+RECENT_MOVE_CHECK = int(os.getenv("RECENT_MOVE_CHECK", "0"))  # Изменено с 1 на 0
+RSI_ENTRY_CHECK = int(os.getenv("RSI_ENTRY_CHECK", "0"))  # Изменено с 1 на 0
+EMA_CROSS_RECENT = int(os.getenv("EMA_CROSS_RECENT", "0"))  # Изменено с 1 на 0
+VOL_RECENT_CHECK = int(os.getenv("VOL_RECENT_CHECK", "0"))  # Изменено с 1 на 0
 
 # Параметры для улучшенной стратегии
 MAX_SIGNALS_PER_DAY = int(os.getenv("MAX_SIGNALS_PER_DAY", "10"))
-USE_MACD = int(os.getenv("USE_MACD", "1"))
-USE_ADX = int(os.getenv("USE_ADX", "1"))
+# Отключаем MACD и ADX по умолчанию для более частых сигналов
+USE_MACD = int(os.getenv("USE_MACD", "0"))  # Изменено с 1 на 0
+USE_ADX = int(os.getenv("USE_ADX", "0"))  # Изменено с 1 на 0
 MIN_ADX = float(os.getenv("MIN_ADX", "20.0"))
 
 # Валидация обязательных параметров
