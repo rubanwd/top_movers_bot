@@ -217,7 +217,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
             logging.info(f"{symbol} {side}: ❌ RECENT_MOVE не прошел (изменение: {recent_change_pct:.2f}%, требуется: {config.MIN_RECENT_CHANGE_PCT}%)")
             return None
     
-    # 2. Проверка, что RSI только что вошел в нужную зону - ОПЦИОНАЛЬНО
+    # 2. Проверка, что RSI только что вошел в нужную зону - ОПЦИОНАЛЬНО (ослаблена)
     rsi_entry_ok = True
     if config.RSI_ENTRY_CHECK:
         if len(rsi_series) < 3:
@@ -228,23 +228,26 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         prev_prev_rsi = float(rsi_series.iloc[-3])
         
         if side == "LONG":
-            # RSI должен был быть ниже зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 50%)
-            rsi_just_entered = (prev_rsi < config.RSI_LONG_MIN or prev_prev_rsi < config.RSI_LONG_MIN) and (config.RSI_LONG_MIN <= last_rsi <= config.RSI_LONG_MAX)
-            rsi_in_early_zone = config.RSI_LONG_MIN <= last_rsi <= (config.RSI_LONG_MIN + (config.RSI_LONG_MAX - config.RSI_LONG_MIN) * 0.5)  # Первые 50% зоны
+            # Ослабленная проверка: RSI в зоне И (только что вошел ИЛИ растет ИЛИ в начале зоны)
+            rsi_in_zone = config.RSI_LONG_MIN <= last_rsi <= config.RSI_LONG_MAX
+            rsi_just_entered = (prev_rsi < config.RSI_LONG_MIN or prev_prev_rsi < config.RSI_LONG_MIN) and rsi_in_zone
             rsi_rising = last_rsi > prev_rsi  # RSI растет
-            rsi_entry_ok = (rsi_just_entered or (rsi_in_early_zone and rsi_rising))  # Более строго
+            rsi_in_early_zone = config.RSI_LONG_MIN <= last_rsi <= (config.RSI_LONG_MIN + (config.RSI_LONG_MAX - config.RSI_LONG_MIN) * 0.6)  # Первые 60% зоны
+            # Принимаем если RSI в зоне И (только что вошел ИЛИ растет ИЛИ в начале зоны)
+            rsi_entry_ok = rsi_in_zone and (rsi_just_entered or rsi_rising or rsi_in_early_zone)
         else:
-            # RSI должен был быть выше зоны и только что войти в нее, ИЛИ находиться в начале зоны (первые 50%)
-            rsi_just_entered = (prev_rsi > config.RSI_SHORT_MAX or prev_prev_rsi > config.RSI_SHORT_MAX) and (config.RSI_SHORT_MIN <= last_rsi <= config.RSI_SHORT_MAX)
-            rsi_in_early_zone = (config.RSI_SHORT_MIN + (config.RSI_SHORT_MAX - config.RSI_SHORT_MIN) * 0.5) <= last_rsi <= config.RSI_SHORT_MAX  # Последние 50% зоны
+            # Для SHORT: аналогично
+            rsi_in_zone = config.RSI_SHORT_MIN <= last_rsi <= config.RSI_SHORT_MAX
+            rsi_just_entered = (prev_rsi > config.RSI_SHORT_MAX or prev_prev_rsi > config.RSI_SHORT_MAX) and rsi_in_zone
             rsi_falling = last_rsi < prev_rsi  # RSI падает
-            rsi_entry_ok = (rsi_just_entered or (rsi_in_early_zone and rsi_falling))  # Более строго
+            rsi_in_early_zone = (config.RSI_SHORT_MIN + (config.RSI_SHORT_MAX - config.RSI_SHORT_MIN) * 0.4) <= last_rsi <= config.RSI_SHORT_MAX  # Последние 60% зоны
+            rsi_entry_ok = rsi_in_zone and (rsi_just_entered or rsi_falling or rsi_in_early_zone)
         
         if not rsi_entry_ok:
             logging.info(f"{symbol} {side}: ❌ RSI_ENTRY не прошел (RSI: {last_rsi:.1f}, prev: {prev_rsi:.1f})")
             return None
     
-    # 3. Проверка недавнего пересечения EMA - ОПЦИОНАЛЬНО
+    # 3. Проверка недавнего пересечения EMA - ОПЦИОНАЛЬНО (ослаблена)
     ema_cross_ok = True
     if config.EMA_CROSS_RECENT:
         if len(ema_fast) < 3 or len(ema_slow) < 3:
@@ -257,15 +260,19 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         prev_prev_ema_slow = float(ema_slow.iloc[-3]) if len(ema_slow) >= 3 else prev_ema_slow
         
         if side == "LONG":
-            # EMA должны были пересечься недавно (более строго)
-            ema_crossed = (prev_ema_fast <= prev_ema_slow or prev_prev_ema_fast <= prev_prev_ema_slow) and (last_ema_fast > last_ema_slow)
+            # Ослабленная проверка: EMA в правильном порядке И (пересекли недавно ИЛИ сближаются ИЛИ уже пересекли)
+            ema_correct_order = last_ema_fast > last_ema_slow
+            ema_crossed = (prev_ema_fast <= prev_ema_slow or prev_prev_ema_fast <= prev_prev_ema_slow) and ema_correct_order
             ema_converging = (last_ema_fast - last_ema_slow) > (prev_ema_fast - prev_ema_slow)  # Сближаются
-            ema_cross_ok = ema_crossed or (ema_converging and last_ema_fast > last_ema_slow * 0.998)  # Почти пересекли
+            ema_almost_crossed = last_ema_fast > last_ema_slow * 0.995  # Почти пересекли (ослаблено с 0.998)
+            ema_cross_ok = ema_correct_order and (ema_crossed or ema_converging or ema_almost_crossed)
         else:
             # Для SHORT: аналогично
-            ema_crossed = (prev_ema_fast >= prev_ema_slow or prev_prev_ema_fast >= prev_prev_ema_slow) and (last_ema_fast < last_ema_slow)
+            ema_correct_order = last_ema_fast < last_ema_slow
+            ema_crossed = (prev_ema_fast >= prev_ema_slow or prev_prev_ema_fast >= prev_prev_ema_slow) and ema_correct_order
             ema_converging = (last_ema_slow - last_ema_fast) > (prev_ema_slow - prev_ema_fast)  # Сближаются
-            ema_cross_ok = ema_crossed or (ema_converging and last_ema_fast < last_ema_slow * 1.002)  # Почти пересекли
+            ema_almost_crossed = last_ema_fast < last_ema_slow * 1.005  # Почти пересекли (ослаблено с 1.002)
+            ema_cross_ok = ema_correct_order and (ema_crossed or ema_converging or ema_almost_crossed)
         
         if not ema_cross_ok:
             logging.info(f"{symbol} {side}: ❌ EMA_CROSS не прошел (EMA12: {last_ema_fast:.6g}, EMA26: {last_ema_slow:.6g})")
