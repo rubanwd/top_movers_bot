@@ -81,27 +81,35 @@ def calculate_signal_score(
     """Вычисляет оценку качества сигнала (0-100)"""
     score = 0.0
     
-    # RSI в оптимальной зоне (20 баллов)
+    # RSI в оптимальной зоне (25 баллов) - ужесточено
     if side == "LONG":
-        if 50 <= rsi_val <= 60:  # Идеальная зона для входа в LONG
-            score += 20
-        elif 45 <= rsi_val < 50 or 60 < rsi_val <= 65:
-            score += 10
+        if 52 <= rsi_val <= 58:  # Очень узкая идеальная зона для входа в LONG
+            score += 25
+        elif 50 <= rsi_val < 52 or 58 < rsi_val <= 60:
+            score += 12
+        elif 48 <= rsi_val < 50 or 60 < rsi_val <= 62:
+            score += 5
     else:  # SHORT
-        if 40 <= rsi_val <= 50:  # Идеальная зона для входа в SHORT
-            score += 20
-        elif 35 <= rsi_val < 40 or 50 < rsi_val <= 55:
-            score += 10
+        if 42 <= rsi_val <= 48:  # Очень узкая идеальная зона для входа в SHORT
+            score += 25
+        elif 40 <= rsi_val < 42 or 48 < rsi_val <= 50:
+            score += 12
+        elif 38 <= rsi_val < 40 or 50 < rsi_val <= 52:
+            score += 5
     
-    # EMA пересечение и сила тренда (25 баллов)
+    # EMA пересечение и сила тренда (30 баллов) - ужесточено
     if side == "LONG":
         if ema_fast_val > ema_slow_val:
             ema_diff_pct = ((ema_fast_val - ema_slow_val) / ema_slow_val) * 100
-            score += min(25, ema_diff_pct * 2)  # До 25 баллов за сильный тренд
+            # Требуем минимум 0.1% разницы для получения баллов
+            if ema_diff_pct >= 0.1:
+                score += min(30, ema_diff_pct * 3)  # До 30 баллов за сильный тренд
     else:  # SHORT
         if ema_fast_val < ema_slow_val:
             ema_diff_pct = ((ema_slow_val - ema_fast_val) / ema_slow_val) * 100
-            score += min(25, ema_diff_pct * 2)  # До 25 баллов за сильный тренд
+            # Требуем минимум 0.1% разницы для получения баллов
+            if ema_diff_pct >= 0.1:
+                score += min(30, ema_diff_pct * 3)  # До 30 баллов за сильный тренд
     
     # MACD подтверждение (15 баллов)
     if config.USE_MACD:
@@ -115,13 +123,14 @@ def calculate_signal_score(
         if adx_val >= config.MIN_ADX:
             score += min(15, (adx_val - config.MIN_ADX) / 2)  # До 15 баллов за сильный тренд
     
-    # Объем (10 баллов)
+    # Объем (15 баллов) - увеличено, так как теперь обязательное условие
     if vol_spike:
-        score += 10
+        # Дополнительные баллы за очень сильный всплеск объема
+        score += 15
     
-    # Momentum (10 баллов)
+    # Momentum (15 баллов) - увеличено, так как теперь обязательное условие
     if momentum_ok:
-        score += 10
+        score += 15
     
     # Недавнее движение (5 баллов)
     if abs(recent_change_pct) >= config.MIN_RECENT_CHANGE_PCT:
@@ -180,11 +189,11 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_2 = (float(close.iloc[-2]) - float(close.iloc[-3])) / float(close.iloc[-3]) * 100
         
         if side == "LONG":
-            # Для LONG: требуется ускорение роста (ослаблено для 5m таймфрейма)
-            momentum_ok = price_change_1 > price_change_2 and price_change_1 > 0.05  # Ускорение и минимум 0.05% (было 0.15%)
+            # Для LONG: требуется ускорение роста (очень ужесточено для строгого отбора)
+            momentum_ok = price_change_1 > price_change_2 and price_change_1 > 0.25  # Ускорение и минимум 0.25%
         else:
-            # Для SHORT: требуется ускорение падения (ослаблено для 5m таймфрейма)
-            momentum_ok = price_change_1 < price_change_2 and price_change_1 < -0.05  # Ускорение и минимум 0.05% (было 0.15%)
+            # Для SHORT: требуется ускорение падения (очень ужесточено для строгого отбора)
+            momentum_ok = price_change_1 < price_change_2 and price_change_1 < -0.25  # Ускорение и минимум 0.25%
 
     # ========== ПРОВЕРКИ ДЛЯ РАННЕГО ОБНАРУЖЕНИЯ ДВИЖЕНИЯ (ОПЦИОНАЛЬНЫЕ) ==========
     
@@ -297,33 +306,36 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
     rsi_ok = False
 
     if side == "LONG":
-        # Для раннего обнаружения: EMA быстрая должна быть близка к медленной или выше
-        ema_fast_prev = float(ema_fast.iloc[-2]) if len(ema_fast) >= 2 else last_ema_fast
-        ema_slow_prev = float(ema_slow.iloc[-2]) if len(ema_slow) >= 2 else last_ema_slow
-        ema_converging = (last_ema_fast > last_ema_slow) or \
-                        ((last_ema_fast - last_ema_slow) > (ema_fast_prev - ema_slow_prev))  # Сближаются
-        trend_ok = ema_converging or last_ema_fast > last_ema_slow
+        # Строгая проверка тренда: EMA быстрая должна быть ЗНАЧИТЕЛЬНО выше медленной
+        ema_diff_pct = ((last_ema_fast - last_ema_slow) / last_ema_slow) * 100
+        # Требуем минимум 0.15% разницы для подтверждения сильного тренда
+        trend_ok = last_ema_fast > last_ema_slow and ema_diff_pct >= 0.15
         rsi_ok = config.RSI_LONG_MIN <= last_rsi <= config.RSI_LONG_MAX
     else:
-        # Для SHORT: аналогично
-        ema_fast_prev = float(ema_fast.iloc[-2]) if len(ema_fast) >= 2 else last_ema_fast
-        ema_slow_prev = float(ema_slow.iloc[-2]) if len(ema_slow) >= 2 else last_ema_slow
-        ema_converging = (last_ema_fast < last_ema_slow) or \
-                        ((last_ema_slow - last_ema_fast) > (ema_slow_prev - ema_fast_prev))  # Сближаются
-        trend_ok = ema_converging or last_ema_fast < last_ema_slow
+        # Строгая проверка тренда: EMA быстрая должна быть ЗНАЧИТЕЛЬНО ниже медленной
+        ema_diff_pct = ((last_ema_slow - last_ema_fast) / last_ema_slow) * 100
+        # Требуем минимум 0.15% разницы для подтверждения сильного тренда
+        trend_ok = last_ema_fast < last_ema_slow and ema_diff_pct >= 0.15
         rsi_ok = config.RSI_SHORT_MIN <= last_rsi <= config.RSI_SHORT_MAX
 
-    # Основные проверки: тренд, RSI, и (всплеск объема ИЛИ momentum)
-    volume_or_momentum_ok = vol_spike or momentum_ok
+    # Дополнительная проверка: минимальный объем за 24ч должен быть достаточно большим
+    volume_24h_ok = float(ticker_row["quoteVolume"]) >= config.MIN_QUOTE_VOLUME_USDT
     
-    if not (trend_ok and rsi_ok and volume_or_momentum_ok):
+    if not volume_24h_ok:
+        logging.info(f"{symbol} {side}: ❌ объем 24ч слишком мал ({float(ticker_row['quoteVolume']):,.0f} < {config.MIN_QUOTE_VOLUME_USDT:,.0f})")
+        return None
+    
+    # Основные проверки: тренд, RSI, и (всплеск объема И momentum) - требуем ОБА условия
+    volume_and_momentum_ok = vol_spike and momentum_ok  # Требуем ОБА условия для строгого отбора
+    
+    if not (trend_ok and rsi_ok and volume_and_momentum_ok):
         failed_checks = []
         if not trend_ok:
             failed_checks.append(f"trend (EMA12: {last_ema_fast:.6g}, EMA26: {last_ema_slow:.6g})")
         if not rsi_ok:
             failed_checks.append(f"RSI ({last_rsi:.1f}, требуется {config.RSI_LONG_MIN if side == 'LONG' else config.RSI_SHORT_MIN}-{config.RSI_LONG_MAX if side == 'LONG' else config.RSI_SHORT_MAX})")
-        if not volume_or_momentum_ok:
-            failed_checks.append(f"volume/momentum (vol_spike: {vol_spike}, momentum: {momentum_ok})")
+        if not volume_and_momentum_ok:
+            failed_checks.append(f"volume AND momentum (vol_spike: {vol_spike}, momentum: {momentum_ok}) - требуется ОБА")
         logging.info(f"{symbol} {side}: ❌ основные проверки не прошли: {', '.join(failed_checks)}")
         return None
     
@@ -365,8 +377,8 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_24h=price_change_24h,
     )
     
-    # Минимальная оценка для принятия сигнала (понижено для более частых сигналов)
-    MIN_SCORE_THRESHOLD = 20.0  # Понижено с 30 до 20 для более частых сигналов
+    # Минимальная оценка для принятия сигнала (увеличено для очень строгого отбора)
+    MIN_SCORE_THRESHOLD = 60.0  # Увеличено до 60 для очень строгого отбора
     if signal_score < MIN_SCORE_THRESHOLD:
         logging.info(f"{symbol} {side}: ❌ score слишком низкий ({signal_score:.1f} < {MIN_SCORE_THRESHOLD})")
         return None

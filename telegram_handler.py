@@ -216,7 +216,7 @@ async def send_telegram_file_async(content: str, filename: str, chat_id: str, ma
                 return  # Успешно отправлено
             except Exception as e:
                 error_str = str(e)
-                # Проверяем, является ли это ошибкой Flood control
+                # Проверяем, является ли это ошибкой Flood control (429)
                 if "Flood control" in error_str or "429" in error_str:
                     # Извлекаем время ожидания из сообщения об ошибке
                     retry_after = 2  # По умолчанию 2 секунды
@@ -239,6 +239,20 @@ async def send_telegram_file_async(content: str, filename: str, chat_id: str, ma
                         continue
                     else:
                         logging.error(f"Превышено максимальное количество попыток для {filename} в {chat_id_str} из-за Flood control")
+                        raise
+                # Проверяем, является ли это ошибкой сервера Telegram (500)
+                elif "Internal Server Error" in error_str or "500" in error_str:
+                    retry_after = 3  # Ждем 3 секунды перед повтором
+                    if attempt < max_retries - 1:
+                        logging.warning(f"Ошибка сервера Telegram (500) для {filename} в {chat_id_str}. Ожидание {retry_after} секунд перед повторной попыткой {attempt + 2}/{max_retries}")
+                        await asyncio.sleep(retry_after)
+                        # Пересоздаем файл для новой попытки
+                        file_obj = BytesIO(content.encode('utf-8'))
+                        file_obj.name = filename
+                        input_file = InputFile(file_obj, filename=filename)
+                        continue
+                    else:
+                        logging.error(f"Превышено максимальное количество попыток для {filename} в {chat_id_str} из-за ошибки сервера Telegram")
                         raise
                 else:
                     # Другая ошибка - пробрасываем сразу
