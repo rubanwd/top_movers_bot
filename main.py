@@ -153,6 +153,19 @@ def run_once():
                                 else:
                                     logging.warning(f"❌ Не удалось открыть позицию для {signal.side} {signal.symbol} (результат: None)")
                                     iteration_logs.append(f"❌ Не удалось открыть позицию: {signal.side} {signal.symbol}")
+                            except RuntimeError as e:
+                                # Если ошибка аутентификации, логируем и продолжаем
+                                if "authentication" in str(e).lower() or "401" in str(e) or "invalid" in str(e).lower():
+                                    logging.error(f"❌ Ошибка аутентификации ByBit API для {signal.symbol}")
+                                    logging.error(f"   Проверьте BYBIT_API_KEY и BYBIT_API_SECRET в .env")
+                                    logging.error(f"   Убедитесь, что используете правильные ключи для testnet/mainnet")
+                                    iteration_logs.append(f"❌ Ошибка аутентификации API для {signal.symbol}")
+                                    # Отключаем торговлю для следующих сигналов в этой итерации
+                                    trader.enabled = False
+                                    break
+                                else:
+                                    logging.error(f"Ошибка при открытии позиции для {signal.symbol}: {e}", exc_info=True)
+                                    iteration_logs.append(f"❌ Ошибка открытия позиции {signal.symbol}: {str(e)}")
                             except Exception as e:
                                 logging.error(f"Ошибка при открытии позиции для {signal.symbol}: {e}", exc_info=True)
                                 iteration_logs.append(f"❌ Ошибка открытия позиции {signal.symbol}: {str(e)}")
@@ -168,9 +181,49 @@ def run_once():
         logging.warning("Не удалось отправить файлы в Telegram: %s", e)
 
 
+def test_trading():
+    """Тестовая функция для проверки открытия позиций"""
+    if config.EXCHANGE != "bybit":
+        logging.warning("Тестовый режим доступен только для ByBit")
+        return
+    
+    if not config.BYBIT_ENABLE_TRADING:
+        logging.warning("Торговля отключена. Включите BYBIT_ENABLE_TRADING=1 для теста")
+        return
+    
+    logging.info("=" * 80)
+    logging.info("🧪 ТЕСТОВЫЙ РЕЖИМ: Проверка открытия позиций")
+    logging.info("=" * 80)
+    
+    trader = bybit_trading.get_trader()
+    if not trader.enabled:
+        logging.error("❌ ByBit API ключи не настроены. Проверьте BYBIT_API_KEY и BYBIT_API_SECRET в .env")
+        return
+    
+    # Тестируем открытие LONG позиции на BTCUSDT
+    logging.info("\nТест 1: Открытие LONG позиции на BTCUSDT")
+    result = trader.test_order_placement(symbol="BTCUSDT", side="LONG", risk_percent=config.BYBIT_RISK_PERCENT)
+    
+    if result:
+        logging.info("✅ Тест пройден успешно!")
+    else:
+        logging.error("❌ Тест не пройден. Проверьте логи выше для деталей.")
+    
+    logging.info("=" * 80)
+    logging.info("Тестовый режим завершен. Бот продолжит работу в обычном режиме.")
+    logging.info("Для отключения тестового режима установите TEST_MODE=0 в .env")
+    logging.info("=" * 80)
+
+
 def main():
     """Главная функция - запускает бесконечный цикл сканирования"""
     exchange_name = config.EXCHANGE.upper()
+    
+    # Проверяем тестовый режим
+    if config.TEST_MODE:
+        test_trading()
+        logging.info("\nПереходим в обычный режим работы...\n")
+    
     logging.info(f"Запускаем {exchange_name} Top Movers bot (FULL mode).")
     logging.info(f"Текущие настройки: TOP_N={config.TOP_N}, SCAN_INTERVAL_SECONDS={config.SCAN_INTERVAL_SECONDS}")
     while True:

@@ -1,14 +1,10 @@
 """Модуль для автоматической торговли на ByBit (demo/testnet)"""
 import logging
-import hmac
-import hashlib
-import time
-import requests
 from typing import Optional, Dict
-from urllib.parse import urlencode
 
 import config
 from models import Signal
+from bybit_api_new import BybitAPI
 
 
 class ByBitTrader:
@@ -22,69 +18,29 @@ class ByBitTrader:
         if not self.api_key or not self.api_secret:
             logging.warning("ByBit API ключи не заданы. Торговля будет отключена.")
             self.enabled = False
+            self.api = None
         else:
             self.enabled = True
-    
-    def _generate_signature(self, params: dict) -> str:
-        """Генерирует подпись для запроса"""
-        query_string = urlencode(sorted(params.items()))
-        signature = hmac.new(
-            self.api_secret.encode("utf-8"),
-            query_string.encode("utf-8"),
-            hashlib.sha256
-        ).hexdigest()
-        return signature
-    
-    def _make_request(self, method: str, endpoint: str, params: dict = None) -> dict:
-        """Выполняет запрос к ByBit API"""
-        if not self.enabled:
-            raise RuntimeError("ByBit API ключи не настроены")
-        
-        if params is None:
-            params = {}
-        
-        # Добавляем обязательные параметры
-        params["api_key"] = self.api_key
-        params["timestamp"] = int(time.time() * 1000)
-        params["recv_window"] = 5000
-        
-        # Генерируем подпись
-        signature = self._generate_signature(params)
-        params["sign"] = signature
-        
-        url = f"{self.base_url}{endpoint}"
-        
-        if method.upper() == "GET":
-            resp = requests.get(url, params=params, timeout=10)
-        else:
-            # ByBit v5 API требует параметры в query string для POST запросов
-            resp = requests.post(url, params=params, timeout=10)
-        
-        resp.raise_for_status()
-        data = resp.json()
-        
-        if data.get("retCode") != 0:
-            error_msg = data.get("retMsg", "Unknown error")
-            raise RuntimeError(f"ByBit API error: {error_msg}")
-        
-        return data
+            self.api = BybitAPI(base_url=self.base_url, api_key=self.api_key, api_secret=self.api_secret)
+            
+            # Устанавливаем режим позиции в one-way (односторонний)
+            try:
+                self.api.set_position_mode(category="linear", mode="one_way")
+                logging.info("✅ Режим позиции установлен: one-way (односторонний)")
+            except Exception as e:
+                logging.warning(f"⚠️ Не удалось установить режим позиции (возможно, уже установлен): {e}")
     
     def get_account_info(self) -> dict:
         """Получает информацию об аккаунте"""
-        endpoint = "/v5/account/wallet-balance"
-        params = {
-            "accountType": "UNIFIED",  # Unified account для demo
-        }
-        return self._make_request("GET", endpoint, params)
+        if not self.enabled or not self.api:
+            raise RuntimeError("ByBit API ключи не настроены")
+        return self.api.get_account_info()
     
     def get_symbol_info(self, symbol: str) -> dict:
         """Получает информацию о символе (лот, шаг цены и т.д.)"""
-        endpoint = "/v5/market/instruments-info"
-        params = {
-            "category": "linear",
-            "symbol": symbol,
-        }
-        return self._make_request("GET", endpoint, params)
+        if not self.enabled or not self.api:
+            raise RuntimeError("ByBit API ключи не настроены")
+        return self.api.get_symbol_info(symbol)
     
     def calculate_position_size(self, symbol: str, entry_price: float, sl_price: float, risk_percent: float = 1.0) -> float:
         """Рассчитывает размер позиции на основе риска
@@ -169,6 +125,14 @@ class ByBitTrader:
             
             return qty
             
+        except RuntimeError as e:
+            # Если ошибка аутентификации, логируем и возвращаем 0
+            if "authentication" in str(e).lower() or "401" in str(e) or "invalid" in str(e).lower():
+                logging.error(f"❌ Ошибка аутентификации ByBit API. Торговля отключена. Проверьте API ключи в .env")
+                logging.error(f"   Используется base_url: {self.base_url}")
+                logging.error(f"   Убедитесь, что API ключи правильные для testnet/mainnet")
+                return 0.0
+            raise
         except Exception as e:
             logging.error(f"Ошибка при расчете размера позиции: {e}", exc_info=True)
             return 0.0
@@ -213,18 +177,17 @@ class ByBitTrader:
                 return None
             
             # Открываем рыночную позицию
-            endpoint = "/v5/order/create"
-            params = {
-                "category": "linear",
-                "symbol": signal.symbol,
-                "side": side,
-                "orderType": "Market",
-                "qty": str(qty),
-                "positionIdx": 0,  # 0 = односторонняя позиция
-            }
+            order_result = self.api.place_order(
+                category="linear",
+                symbol=signal.symbol,
+                side=side,
+                orderType="Market",
+                qty=str(qty),
+                positionIdx="0",  # 0 = односторонняя позиция (строка для правильной подписи)
+            )
             
-            order_result = self._make_request("POST", endpoint, params)
-            order_id = order_result.get("result", {}).get("orderId")
+            result_data = order_result.get("result", {})
+            order_id = result_data.get("orderId")
             
             if not order_id:
                 logging.error(f"Не удалось получить orderId для {signal.symbol}")
@@ -257,16 +220,16 @@ class ByBitTrader:
     
     def _set_stop_loss(self, signal: Signal, order_id: str) -> Optional[dict]:
         """Устанавливает стоп-лосс для позиции"""
+        if not self.enabled or not self.api:
+            return None
+        
         try:
-            endpoint = "/v5/position/trading-stop"
-            params = {
-                "category": "linear",
-                "symbol": signal.symbol,
-                "stopLoss": str(signal.sl),
-                "positionIdx": 0,
-            }
-            
-            result = self._make_request("POST", endpoint, params)
+            result = self.api.set_sl_tp(
+                category="linear",
+                symbol=signal.symbol,
+                positionIdx=0,
+                stopLoss=str(signal.sl),
+            )
             logging.info(f"Установлен SL для {signal.symbol}: {signal.sl}")
             return result
             
@@ -280,19 +243,20 @@ class ByBitTrader:
         Примечание: ByBit поддерживает только один TP через API.
         Устанавливаем TP1, а TP2 можно установить вручную или через частичное закрытие.
         """
+        if not self.enabled or not self.api:
+            return None
+        
         try:
             # Ждем немного, чтобы позиция точно открылась
+            import time
             time.sleep(0.5)
             
-            endpoint = "/v5/position/trading-stop"
-            params = {
-                "category": "linear",
-                "symbol": signal.symbol,
-                "takeProfit": str(signal.tp1),  # Устанавливаем TP1
-                "positionIdx": 0,
-            }
-            
-            result = self._make_request("POST", endpoint, params)
+            result = self.api.set_sl_tp(
+                category="linear",
+                symbol=signal.symbol,
+                positionIdx=0,
+                takeProfit=str(signal.tp1),  # Устанавливаем TP1
+            )
             logging.info(f"Установлен TP1 для {signal.symbol}: {signal.tp1}")
             
             # Для TP2 можно разместить лимитный ордер на частичное закрытие
@@ -302,6 +266,87 @@ class ByBitTrader:
             
         except Exception as e:
             logging.error(f"Ошибка при установке TP для {signal.symbol}: {e}", exc_info=True)
+            return None
+
+
+    def test_order_placement(self, symbol: str = "BTCUSDT", side: str = "LONG", risk_percent: float = 1.0) -> Optional[dict]:
+        """Тестовая функция для открытия позиции без сигнала (для отладки)
+        
+        Args:
+            symbol: Торговая пара (по умолчанию BTCUSDT)
+            side: Направление "LONG" или "SHORT" (по умолчанию LONG)
+            risk_percent: Процент баланса для риска (по умолчанию 1%)
+        
+        Returns:
+            Результат размещения ордера или None при ошибке
+        """
+        if not self.enabled:
+            logging.warning("ByBit торговля отключена (нет API ключей)")
+            return None
+        
+        try:
+            # Получаем текущую цену
+            from bybit_api_new import get_24h_tickers, get_klines
+            tickers = get_24h_tickers()
+            ticker = next((t for t in tickers if t["symbol"] == symbol), None)
+            
+            if not ticker:
+                logging.error(f"Не удалось найти тикер {symbol}")
+                return None
+            
+            current_price = float(ticker["lastPrice"])
+            
+            # Получаем свечи для расчета ATR
+            df = get_klines(symbol, config.TIMEFRAME_MAIN, limit=200)
+            import indicators
+            atr_series = indicators.atr(df, 14)
+            last_atr = float(atr_series.iloc[-1])
+            
+            # Создаем фиктивный сигнал для теста
+            from models import Signal
+            test_signal = Signal(
+                symbol=symbol,
+                side=side,
+                reason="TEST MODE - Тестовое открытие позиции",
+                timeframe=config.TIMEFRAME_MAIN,
+                trend_tf=config.TIMEFRAME_TREND,
+                last_price=current_price,
+                rsi=50.0,
+                ema_fast=current_price,
+                ema_slow=current_price,
+                atr=last_atr,
+                entry=current_price,
+                sl=current_price - config.ATR_SL_MULTIPLIER * last_atr if side == "LONG" else current_price + config.ATR_SL_MULTIPLIER * last_atr,
+                tp1=current_price + config.ATR_TP1_MULTIPLIER * last_atr if side == "LONG" else current_price - config.ATR_TP1_MULTIPLIER * last_atr,
+                tp2=current_price + config.ATR_TP2_MULTIPLIER * last_atr if side == "LONG" else current_price - config.ATR_TP2_MULTIPLIER * last_atr,
+                volume_24h=float(ticker.get("quoteVolume", 0)),
+                change_24h=float(ticker.get("priceChangePercent", 0)),
+                tag="TEST",
+                score=100.0,
+            )
+            
+            logging.info(f"🧪 ТЕСТОВЫЙ РЕЖИМ: Открываем тестовую позицию {side} {symbol}")
+            logging.info(f"   Текущая цена: {current_price:.6g}")
+            logging.info(f"   ATR: {last_atr:.6g}")
+            logging.info(f"   Entry: {test_signal.entry:.6g}")
+            logging.info(f"   SL: {test_signal.sl:.6g}")
+            logging.info(f"   TP1: {test_signal.tp1:.6g}")
+            logging.info(f"   TP2: {test_signal.tp2:.6g}")
+            
+            # Открываем позицию используя стандартную функцию
+            result = self.place_order(test_signal, risk_percent=risk_percent)
+            
+            if result:
+                logging.info(f"✅ ТЕСТОВАЯ ПОЗИЦИЯ ОТКРЫТА: {side} {symbol}")
+                logging.info(f"   Order ID: {result.get('orderId')}")
+                logging.info(f"   Quantity: {result.get('qty')}")
+            else:
+                logging.error(f"❌ Не удалось открыть тестовую позицию {side} {symbol}")
+            
+            return result
+            
+        except Exception as e:
+            logging.error(f"Ошибка при тестовом открытии позиции: {e}", exc_info=True)
             return None
 
 

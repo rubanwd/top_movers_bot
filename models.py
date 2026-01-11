@@ -24,3 +24,4 @@ class Signal:
     tag: str
     score: float = 0.0  # Оценка качества сигнала (0-100)
 
+

@@ -86,3 +86,4 @@ def adx(df: pd.DataFrame, period: int = 14) -> pd.Series:
     
     return adx_series
 
+

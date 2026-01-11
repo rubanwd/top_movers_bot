@@ -18,12 +18,15 @@ EXCHANGE = os.getenv("EXCHANGE", "bybit").lower()
 # Binance API
 BINANCE_FUTURES_BASE = os.getenv("BINANCE_FUTURES_BASE", "https://fapi.binance.com")
 
-# ByBit API (demo/testnet)
-BYBIT_FUTURES_BASE = os.getenv("BYBIT_FUTURES_BASE", "https://api-testnet.bybit.com")
+# ByBit API (demo/testnet/mainnet)
+# Поддерживает: https://api-demo.bybit.com (demo), https://api-testnet.bybit.com (testnet), https://api.bybit.com (mainnet)
+BYBIT_FUTURES_BASE = os.getenv("BYBIT_FUTURES_BASE", "https://api-demo.bybit.com")
 BYBIT_API_KEY = os.getenv("BYBIT_API_KEY")
 BYBIT_API_SECRET = os.getenv("BYBIT_API_SECRET")
 BYBIT_ENABLE_TRADING = int(os.getenv("BYBIT_ENABLE_TRADING", "1"))  # 1 = включено, 0 = выключено
 BYBIT_RISK_PERCENT = float(os.getenv("BYBIT_RISK_PERCENT", "1.0"))  # Процент баланса для риска на сделку
+# Тестовый режим для отладки открытия позиций (открывает тестовую позицию на BTCUSDT)
+TEST_MODE = int(os.getenv("TEST_MODE", "0"))  # 1 = включено (открывает тестовую позицию), 0 = выключено
 
 # Валидация выбора биржи
 if EXCHANGE not in ["bybit", "binance"]:

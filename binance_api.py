@@ -45,3 +45,4 @@ def get_klines(symbol: str, interval: str, limit: int = 200) -> pd.DataFrame:
     df["volume"] = df["volume"].astype(float)
     return df
 
+
