@@ -81,35 +81,35 @@ def calculate_signal_score(
     """Вычисляет оценку качества сигнала (0-100)"""
     score = 0.0
     
-    # RSI в оптимальной зоне (25 баллов) - ужесточено
+    # RSI в оптимальной зоне (25 баллов) - оптимизировано для лучшего win rate
     if side == "LONG":
-        if 52 <= rsi_val <= 58:  # Очень узкая идеальная зона для входа в LONG
+        if 50 <= rsi_val <= 56:  # Оптимизированная зона для входа в LONG (избегаем перекупленности)
             score += 25
-        elif 50 <= rsi_val < 52 or 58 < rsi_val <= 60:
-            score += 12
-        elif 48 <= rsi_val < 50 or 60 < rsi_val <= 62:
-            score += 5
+        elif 48 <= rsi_val < 50 or 56 < rsi_val <= 58:
+            score += 15
+        elif 46 <= rsi_val < 48 or 58 < rsi_val <= 60:
+            score += 8
     else:  # SHORT
-        if 42 <= rsi_val <= 48:  # Очень узкая идеальная зона для входа в SHORT
+        if 44 <= rsi_val <= 50:  # Оптимизированная зона для входа в SHORT (избегаем перепроданности)
             score += 25
-        elif 40 <= rsi_val < 42 or 48 < rsi_val <= 50:
-            score += 12
-        elif 38 <= rsi_val < 40 or 50 < rsi_val <= 52:
-            score += 5
+        elif 42 <= rsi_val < 44 or 50 < rsi_val <= 52:
+            score += 15
+        elif 40 <= rsi_val < 42 or 52 < rsi_val <= 54:
+            score += 8
     
-    # EMA пересечение и сила тренда (30 баллов) - ужесточено
+    # EMA пересечение и сила тренда (30 баллов) - оптимизировано
     if side == "LONG":
         if ema_fast_val > ema_slow_val:
             ema_diff_pct = ((ema_fast_val - ema_slow_val) / ema_slow_val) * 100
-            # Требуем минимум 0.1% разницы для получения баллов
-            if ema_diff_pct >= 0.1:
-                score += min(30, ema_diff_pct * 3)  # До 30 баллов за сильный тренд
+            # Оптимизировано: более гибкие требования для лучшего win rate
+            if ema_diff_pct >= 0.08:
+                score += min(30, ema_diff_pct * 4)  # Увеличена чувствительность
     else:  # SHORT
         if ema_fast_val < ema_slow_val:
             ema_diff_pct = ((ema_slow_val - ema_fast_val) / ema_slow_val) * 100
-            # Требуем минимум 0.1% разницы для получения баллов
-            if ema_diff_pct >= 0.1:
-                score += min(30, ema_diff_pct * 3)  # До 30 баллов за сильный тренд
+            # Оптимизировано: более гибкие требования для лучшего win rate
+            if ema_diff_pct >= 0.08:
+                score += min(30, ema_diff_pct * 4)  # Увеличена чувствительность
     
     # MACD подтверждение (15 баллов)
     if config.USE_MACD:
@@ -181,19 +181,26 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
     last_vol = float(vol.iloc[-1])
     vol_spike = last_vol > config.VOL_SPIKE_MULTIPLIER * avg_vol if avg_vol > 0 else False
     
-    # Улучшенная проверка momentum (ускорение цены) для раннего обнаружения
+    # Улучшенная проверка momentum (ускорение цены) - оптимизировано для лучшего win rate
     momentum_ok = False
-    if len(close) >= 3:
+    if len(close) >= 5:  # Увеличено окно для более надежного определения momentum
         # Проверяем ускорение: цена должна расти/падать быстрее
         price_change_1 = (last_close - float(close.iloc[-2])) / float(close.iloc[-2]) * 100
         price_change_2 = (float(close.iloc[-2]) - float(close.iloc[-3])) / float(close.iloc[-3]) * 100
+        price_change_3 = (float(close.iloc[-3]) - float(close.iloc[-4])) / float(close.iloc[-4]) * 100
         
         if side == "LONG":
-            # Для LONG: требуется ускорение роста (очень ужесточено для строгого отбора)
-            momentum_ok = price_change_1 > price_change_2 and price_change_1 > 0.25  # Ускорение и минимум 0.25%
+            # Для LONG: требуется ускорение роста (оптимизировано)
+            # Принимаем если: ускорение ИЛИ стабильный рост последних 2-3 свечей
+            momentum_ok = (price_change_1 > price_change_2 and price_change_1 > 0.15) or \
+                         (price_change_1 > 0.2 and price_change_2 > 0.1) or \
+                         (price_change_1 > 0.15 and price_change_2 > 0.15 and price_change_3 > 0.1)
         else:
-            # Для SHORT: требуется ускорение падения (очень ужесточено для строгого отбора)
-            momentum_ok = price_change_1 < price_change_2 and price_change_1 < -0.25  # Ускорение и минимум 0.25%
+            # Для SHORT: требуется ускорение падения (оптимизировано)
+            # Принимаем если: ускорение ИЛИ стабильное падение последних 2-3 свечей
+            momentum_ok = (price_change_1 < price_change_2 and price_change_1 < -0.15) or \
+                         (price_change_1 < -0.2 and price_change_2 < -0.1) or \
+                         (price_change_1 < -0.15 and price_change_2 < -0.15 and price_change_3 < -0.1)
 
     # ========== ПРОВЕРКИ ДЛЯ РАННЕГО ОБНАРУЖЕНИЯ ДВИЖЕНИЯ (ОПЦИОНАЛЬНЫЕ) ==========
     
@@ -306,16 +313,16 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
     rsi_ok = False
 
     if side == "LONG":
-        # Строгая проверка тренда: EMA быстрая должна быть ЗНАЧИТЕЛЬНО выше медленной
+        # Оптимизированная проверка тренда: баланс между качеством и количеством сигналов
         ema_diff_pct = ((last_ema_fast - last_ema_slow) / last_ema_slow) * 100
-        # Требуем минимум 0.15% разницы для подтверждения сильного тренда
-        trend_ok = last_ema_fast > last_ema_slow and ema_diff_pct >= 0.15
+        # Оптимизировано: снижено требование до 0.1% для лучшего win rate
+        trend_ok = last_ema_fast > last_ema_slow and ema_diff_pct >= 0.1
         rsi_ok = config.RSI_LONG_MIN <= last_rsi <= config.RSI_LONG_MAX
     else:
-        # Строгая проверка тренда: EMA быстрая должна быть ЗНАЧИТЕЛЬНО ниже медленной
+        # Оптимизированная проверка тренда: баланс между качеством и количеством сигналов
         ema_diff_pct = ((last_ema_slow - last_ema_fast) / last_ema_slow) * 100
-        # Требуем минимум 0.15% разницы для подтверждения сильного тренда
-        trend_ok = last_ema_fast < last_ema_slow and ema_diff_pct >= 0.15
+        # Оптимизировано: снижено требование до 0.1% для лучшего win rate
+        trend_ok = last_ema_fast < last_ema_slow and ema_diff_pct >= 0.1
         rsi_ok = config.RSI_SHORT_MIN <= last_rsi <= config.RSI_SHORT_MAX
 
     # Дополнительная проверка: минимальный объем за 24ч должен быть достаточно большим
@@ -324,6 +331,21 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
     if not volume_24h_ok:
         logging.info(f"{symbol} {side}: ❌ объем 24ч слишком мал ({float(ticker_row['quoteVolume']):,.0f} < {config.MIN_QUOTE_VOLUME_USDT:,.0f})")
         return None
+    
+    # Дополнительный фильтр: избегаем входов когда цена слишком далеко от EMA
+    # Это помогает избежать входов на пиках/дне
+    if side == "LONG":
+        price_to_ema_fast = ((last_close - last_ema_fast) / last_ema_fast) * 100
+        # Если цена более чем на 1.5% выше быстрой EMA, возможно уже поздно входить
+        if price_to_ema_fast > 1.5:
+            logging.info(f"{symbol} {side}: ❌ цена слишком далеко от EMA быстрой ({price_to_ema_fast:.2f}% выше)")
+            return None
+    else:  # SHORT
+        price_to_ema_fast = ((last_ema_fast - last_close) / last_ema_fast) * 100
+        # Если цена более чем на 1.5% ниже быстрой EMA, возможно уже поздно входить
+        if price_to_ema_fast > 1.5:
+            logging.info(f"{symbol} {side}: ❌ цена слишком далеко от EMA быстрой ({price_to_ema_fast:.2f}% ниже)")
+            return None
     
     # Основные проверки: тренд, RSI, и (всплеск объема И momentum) - требуем ОБА условия
     volume_and_momentum_ok = vol_spike and momentum_ok  # Требуем ОБА условия для строгого отбора
@@ -353,6 +375,15 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         if last_adx < config.MIN_ADX:
             logging.info(f"{symbol} {side}: ❌ ADX слишком слабый ({last_adx:.1f} < {config.MIN_ADX})")
             return None
+    
+    # Дополнительный фильтр: проверка волатильности через ATR
+    # Избегаем входов в периоды слишком высокой волатильности (риск больших проскальзываний)
+    if last_atr > 0:
+        atr_to_price_pct = (last_atr / last_close) * 100
+        # Если ATR больше 3% от цены, волатильность слишком высока
+        if atr_to_price_pct > 3.0:
+            logging.info(f"{symbol} {side}: ❌ волатильность слишком высока (ATR: {atr_to_price_pct:.2f}% от цены)")
+            return None
 
     if config.BTC_TREND_FILTER and market_trend in ("UP", "DOWN"):
         if side == "LONG" and market_trend == "DOWN":
@@ -377,8 +408,8 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_24h=price_change_24h,
     )
     
-    # Минимальная оценка для принятия сигнала (увеличено для очень строгого отбора)
-    MIN_SCORE_THRESHOLD = 60.0  # Увеличено до 60 для очень строгого отбора
+    # Минимальная оценка для принятия сигнала (оптимизировано для баланса)
+    MIN_SCORE_THRESHOLD = 55.0  # Оптимизировано: баланс между качеством и количеством сигналов
     if signal_score < MIN_SCORE_THRESHOLD:
         logging.info(f"{symbol} {side}: ❌ score слишком низкий ({signal_score:.1f} < {MIN_SCORE_THRESHOLD})")
         return None
@@ -393,6 +424,17 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         sl = entry + config.ATR_SL_MULTIPLIER * last_atr
         tp1 = entry - config.ATR_TP1_MULTIPLIER * last_atr
         tp2 = entry - config.ATR_TP2_MULTIPLIER * last_atr
+    
+    # Проверка минимального Risk/Reward соотношения перед входом
+    # Это критично для прибыльности стратегии
+    risk = abs(entry - sl)
+    reward = abs(tp1 - entry)
+    if risk > 0:
+        risk_reward_ratio = reward / risk
+        MIN_RISK_REWARD_RATIO = 1.8  # Минимум 1.8:1 для прибыльности
+        if risk_reward_ratio < MIN_RISK_REWARD_RATIO:
+            logging.info(f"{symbol} {side}: ❌ Risk/Reward слишком низкий ({risk_reward_ratio:.2f} < {MIN_RISK_REWARD_RATIO})")
+            return None
 
     price_change = float(ticker_row["priceChangePercent"])
     high_price = float(ticker_row["highPrice"])
