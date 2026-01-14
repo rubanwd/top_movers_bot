@@ -66,24 +66,15 @@ def run_once():
         else:
             logging.info("❌ SHORT %s - сигнал отклонен", sym)
     
-    # Сортируем сигналы по оценке качества и ограничиваем количество
+    # Сортируем сигналы по оценке качества (без ограничения количества)
     gain_signals.sort(key=lambda x: x.score, reverse=True)
     loss_signals.sort(key=lambda x: x.score, reverse=True)
     
-    # Ограничиваем количество сигналов (максимум MAX_SIGNALS_PER_DAY в день)
-    # Берем лучшие сигналы независимо от направления, но стараемся сбалансировать
-    all_signals = [(sig, "LONG") for sig in gain_signals] + [(sig, "SHORT") for sig in loss_signals]
-    all_signals.sort(key=lambda x: x[0].score, reverse=True)
-    
-    # Ограничиваем общее количество
-    selected_signals = all_signals[:config.MAX_SIGNALS_PER_DAY]
-    
-    # Разделяем обратно на LONG и SHORT
-    gain_signals = [sig for sig, side in selected_signals if side == "LONG"]
-    loss_signals = [sig for sig, side in selected_signals if side == "SHORT"]
+    # Не ограничиваем количество сигналов - все прошедшие фильтры сигналы отправляются
+    # Количество сигналов контролируется самими условиями генерации
     
     iteration_logs.append(f"Проверено символов: {len(checked_symbols)}")
-    iteration_logs.append(f"Найдено сигналов: LONG={len(gain_signals)}, SHORT={len(loss_signals)} (после фильтрации)")
+    iteration_logs.append(f"Найдено сигналов: LONG={len(gain_signals)}, SHORT={len(loss_signals)}")
 
     msg = telegram_handler.format_signals_message(market_trend, gain_signals, loss_signals)
     msg_console = telegram_handler.format_signals_message_console(market_trend, gain_signals, loss_signals)
