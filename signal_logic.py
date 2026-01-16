@@ -81,35 +81,35 @@ def calculate_signal_score(
     """Вычисляет оценку качества сигнала (0-100)"""
     score = 0.0
     
-    # RSI в оптимальной зоне (25 баллов) - оптимизировано для качественных входов
+    # RSI в оптимальной зоне (25 баллов) - адаптировано под сбалансированные зоны
     if side == "LONG":
-        if 50 <= rsi_val <= 56:  # Оптимальная зона для входа в LONG (избегаем перекупленности)
+        if 48 <= rsi_val <= 58:  # Оптимальная зона для входа в LONG
             score += 25
-        elif 48 <= rsi_val < 50 or 56 < rsi_val <= 58:
-            score += 15
         elif 46 <= rsi_val < 48 or 58 < rsi_val <= 60:
+            score += 15
+        elif 44 <= rsi_val < 46 or 60 < rsi_val <= 62:
             score += 8
     else:  # SHORT
-        if 44 <= rsi_val <= 50:  # Оптимальная зона для входа в SHORT (избегаем перепроданности)
+        if 42 <= rsi_val <= 50:  # Оптимальная зона для входа в SHORT
             score += 25
-        elif 42 <= rsi_val < 44 or 50 < rsi_val <= 52:
+        elif 40 <= rsi_val < 42 or 50 < rsi_val <= 52:
             score += 15
-        elif 40 <= rsi_val < 42 or 52 < rsi_val <= 54:
+        elif 38 <= rsi_val < 40 or 52 < rsi_val <= 54:
             score += 8
     
-    # EMA пересечение и сила тренда (30 баллов) - оптимизировано для качественных трендов
+    # EMA пересечение и сила тренда (30 баллов) - адаптировано под сбалансированные требования
     if side == "LONG":
         if ema_fast_val > ema_slow_val:
             ema_diff_pct = ((ema_fast_val - ema_slow_val) / ema_slow_val) * 100
-            # Требуем минимум 0.15% для начисления баллов
-            if ema_diff_pct >= 0.15:
-                score += min(30, ema_diff_pct * 3)  # Баллы за силу тренда
+            # Требуем минимум 0.08% для начисления баллов
+            if ema_diff_pct >= 0.08:
+                score += min(30, ema_diff_pct * 4)  # Баллы за силу тренда
     else:  # SHORT
         if ema_fast_val < ema_slow_val:
             ema_diff_pct = ((ema_slow_val - ema_fast_val) / ema_slow_val) * 100
-            # Требуем минимум 0.15% для начисления баллов
-            if ema_diff_pct >= 0.15:
-                score += min(30, ema_diff_pct * 3)  # Баллы за силу тренда
+            # Требуем минимум 0.08% для начисления баллов
+            if ema_diff_pct >= 0.08:
+                score += min(30, ema_diff_pct * 4)  # Баллы за силу тренда
     
     # MACD подтверждение (15 баллов) - теперь опционально, не блокирует сигнал
     if config.USE_MACD:
@@ -192,17 +192,19 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_3 = (float(close.iloc[-3]) - float(close.iloc[-4])) / float(close.iloc[-4]) * 100
         
         if side == "LONG":
-            # Для LONG: строгие требования для качественных сигналов
-            # Требуем ускорение роста (цена растет быстрее) ИЛИ стабильный сильный рост
-            momentum_ok = (price_change_1 > price_change_2 and price_change_1 > 0.15) or \
-                         (price_change_1 > 0.2 and price_change_2 > 0.1) or \
-                         (price_change_1 > 0.15 and price_change_2 > 0.15 and price_change_3 > 0.1)
+            # Для LONG: сбалансированные требования для получения нескольких сигналов в день
+            # Принимаем ускорение роста ИЛИ стабильный рост ИЛИ просто положительное движение
+            momentum_ok = (price_change_1 > price_change_2 and price_change_1 > 0.1) or \
+                         (price_change_1 > 0.15 and price_change_2 > 0.05) or \
+                         (price_change_1 > 0.12 and price_change_2 > 0.08) or \
+                         (price_change_1 > 0.1 and price_change_2 > 0.1 and price_change_3 > 0.05)
         else:
-            # Для SHORT: строгие требования для качественных сигналов
-            # Требуем ускорение падения (цена падает быстрее) ИЛИ стабильное сильное падение
-            momentum_ok = (price_change_1 < price_change_2 and price_change_1 < -0.15) or \
-                         (price_change_1 < -0.2 and price_change_2 < -0.1) or \
-                         (price_change_1 < -0.15 and price_change_2 < -0.15 and price_change_3 < -0.1)
+            # Для SHORT: сбалансированные требования для получения нескольких сигналов в день
+            # Принимаем ускорение падения ИЛИ стабильное падение ИЛИ просто отрицательное движение
+            momentum_ok = (price_change_1 < price_change_2 and price_change_1 < -0.1) or \
+                         (price_change_1 < -0.15 and price_change_2 < -0.05) or \
+                         (price_change_1 < -0.12 and price_change_2 < -0.08) or \
+                         (price_change_1 < -0.1 and price_change_2 < -0.1 and price_change_3 < -0.05)
 
     # ========== ПРОВЕРКИ ДЛЯ РАННЕГО ОБНАРУЖЕНИЯ ДВИЖЕНИЯ (ОПЦИОНАЛЬНЫЕ) ==========
     
@@ -296,8 +298,8 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         if len(vol) >= config.RECENT_CANDLES_LOOKBACK:
             recent_vols = vol.iloc[-config.RECENT_CANDLES_LOOKBACK:].astype(float)
             recent_avg_vol = float(recent_vols.mean())
-            # Объем за последние N свечей должен быть значительно выше среднего (строго)
-            vol_recent_ok = recent_avg_vol > avg_vol * 1.15  # 15% выше среднего для качества
+            # Объем за последние N свечей должен быть выше среднего (сбалансировано)
+            vol_recent_ok = recent_avg_vol > avg_vol * 1.08  # 8% выше среднего
         
         if not vol_recent_ok:
             logging.info(f"{symbol} {side}: ❌ VOL_RECENT не прошел (recent_avg: {recent_avg_vol:.0f}, avg: {avg_vol:.0f})")
@@ -309,16 +311,16 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
     rsi_ok = False
 
     if side == "LONG":
-        # Строгая проверка тренда: требуем значимую разницу EMA для подтверждения силы тренда
+        # Сбалансированная проверка тренда: требуем минимальную разницу EMA
         ema_diff_pct = ((last_ema_fast - last_ema_slow) / last_ema_slow) * 100
-        # Требуем минимум 0.15% разницы для качественного тренда
-        trend_ok = last_ema_fast > last_ema_slow and ema_diff_pct >= 0.15
+        # Требуем минимум 0.08% разницы для подтверждения направления тренда
+        trend_ok = last_ema_fast > last_ema_slow and ema_diff_pct >= 0.08
         rsi_ok = config.RSI_LONG_MIN <= last_rsi <= config.RSI_LONG_MAX
     else:
-        # Строгая проверка тренда: требуем значимую разницу EMA для подтверждения силы тренда
+        # Сбалансированная проверка тренда: требуем минимальную разницу EMA
         ema_diff_pct = ((last_ema_slow - last_ema_fast) / last_ema_slow) * 100
-        # Требуем минимум 0.15% разницы для качественного тренда
-        trend_ok = last_ema_fast < last_ema_slow and ema_diff_pct >= 0.15
+        # Требуем минимум 0.08% разницы для подтверждения направления тренда
+        trend_ok = last_ema_fast < last_ema_slow and ema_diff_pct >= 0.08
         rsi_ok = config.RSI_SHORT_MIN <= last_rsi <= config.RSI_SHORT_MAX
 
     # Дополнительная проверка: минимальный объем за 24ч должен быть достаточно большим
@@ -329,49 +331,52 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         return None
     
     # Дополнительный фильтр: избегаем входов когда цена слишком далеко от EMA
-    # Строгий фильтр: цена должна быть близко к EMA для качественного входа
+    # Сбалансированный фильтр: цена должна быть не слишком далеко от EMA
     if side == "LONG":
         price_to_ema_fast = ((last_close - last_ema_fast) / last_ema_fast) * 100
-        # Если цена более чем на 1.2% выше быстрой EMA, возможно уже поздно входить
-        if price_to_ema_fast > 1.2:
+        # Если цена более чем на 2.0% выше быстрой EMA, возможно уже поздно входить
+        if price_to_ema_fast > 2.0:
             logging.info(f"{symbol} {side}: ❌ цена слишком далеко от EMA быстрой ({price_to_ema_fast:.2f}% выше)")
             return None
     else:  # SHORT
         price_to_ema_fast = ((last_ema_fast - last_close) / last_ema_fast) * 100
-        # Если цена более чем на 1.2% ниже быстрой EMA, возможно уже поздно входить
-        if price_to_ema_fast > 1.2:
+        # Если цена более чем на 2.0% ниже быстрой EMA, возможно уже поздно входить
+        if price_to_ema_fast > 2.0:
             logging.info(f"{symbol} {side}: ❌ цена слишком далеко от EMA быстрой ({price_to_ema_fast:.2f}% ниже)")
             return None
     
-    # Основные проверки: тренд, RSI, всплеск объема И momentum - требуем ОБА условия для качества
-    # Строгий отбор: требуем и всплеск объема, и momentum для подтверждения силы движения
-    volume_and_momentum_ok = vol_spike and momentum_ok  # Требуем ОБА условия для строгого отбора
+    # Основные проверки: тренд, RSI, и (всплеск объема ИЛИ momentum) - требуем ХОТЯ БЫ ОДНО
+    # Баланс между качеством и количеством: требуем либо всплеск объема, либо momentum
+    volume_or_momentum_ok = vol_spike or momentum_ok  # Требуем ХОТЯ БЫ ОДНО условие
     
-    if not (trend_ok and rsi_ok and volume_and_momentum_ok):
+    if not (trend_ok and rsi_ok and volume_or_momentum_ok):
         failed_checks = []
         if not trend_ok:
             failed_checks.append(f"trend (EMA12: {last_ema_fast:.6g}, EMA26: {last_ema_slow:.6g})")
         if not rsi_ok:
             failed_checks.append(f"RSI ({last_rsi:.1f}, требуется {config.RSI_LONG_MIN if side == 'LONG' else config.RSI_SHORT_MIN}-{config.RSI_LONG_MAX if side == 'LONG' else config.RSI_SHORT_MAX})")
-        if not volume_and_momentum_ok:
-            failed_checks.append(f"volume AND momentum (vol_spike: {vol_spike}, momentum: {momentum_ok}) - требуется ОБА")
+        if not volume_or_momentum_ok:
+            failed_checks.append(f"volume OR momentum (vol_spike: {vol_spike}, momentum: {momentum_ok}) - требуется ХОТЯ БЫ ОДНО")
         logging.info(f"{symbol} {side}: ❌ основные проверки не прошли: {', '.join(failed_checks)}")
         return None
     
-    # Проверка MACD для подтверждения тренда (обязательна для качества)
+    # Проверка MACD для подтверждения тренда (опциональна, влияет на score)
+    # MACD теперь не блокирует сигнал, но дает бонусы в score
+    macd_confirm = False
     if config.USE_MACD:
-        if side == "LONG" and last_macd_hist <= 0:
-            logging.info(f"{symbol} {side}: ❌ MACD не подтверждает тренд (hist: {last_macd_hist:.6g})")
-            return None
-        if side == "SHORT" and last_macd_hist >= 0:
-            logging.info(f"{symbol} {side}: ❌ MACD не подтверждает тренд (hist: {last_macd_hist:.6g})")
-            return None
+        if side == "LONG" and last_macd_hist > 0:
+            macd_confirm = True
+        elif side == "SHORT" and last_macd_hist < 0:
+            macd_confirm = True
+        # Не блокируем сигнал, если MACD не подтверждает - просто не даем бонусы
     
-    # Проверка ADX для силы тренда (обязательна для качества)
+    # Проверка ADX для силы тренда (опциональна, влияет на score)
+    # ADX теперь не блокирует сигнал, но дает бонусы в score
+    adx_strong = False
     if config.USE_ADX:
-        if last_adx < config.MIN_ADX:
-            logging.info(f"{symbol} {side}: ❌ ADX слишком слабый ({last_adx:.1f} < {config.MIN_ADX})")
-            return None
+        if last_adx >= config.MIN_ADX:
+            adx_strong = True
+        # Не блокируем сигнал, если ADX слабый - просто не даем бонусы
     
     # Дополнительный фильтр: проверка волатильности через ATR
     # Избегаем входов в периоды слишком высокой волатильности (риск больших проскальзываний)
@@ -405,8 +410,8 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_24h=price_change_24h,
     )
     
-    # Минимальная оценка для принятия сигнала (повышено для качественных сигналов)
-    MIN_SCORE_THRESHOLD = 60.0  # Повышено для строгого отбора качественных сигналов
+    # Минимальная оценка для принятия сигнала (сбалансировано для получения нескольких сигналов в день)
+    MIN_SCORE_THRESHOLD = 50.0  # Сбалансировано для получения нескольких сигналов в день
     if signal_score < MIN_SCORE_THRESHOLD:
         logging.info(f"{symbol} {side}: ❌ score слишком низкий ({signal_score:.1f} < {MIN_SCORE_THRESHOLD})")
         return None
