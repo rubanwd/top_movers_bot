@@ -42,29 +42,30 @@ def run_once():
     loss_signals: List[Signal] = []
 
     checked_symbols = []
+    # РЕВЕРСИВНАЯ СТРАТЕГИЯ: gainers (растущие) -> SHORT, losers (падающие) -> LONG
     for row in gainers:
         sym = row["symbol"]
-        logging.info("Проверяем LONG %s", sym)
-        checked_symbols.append(f"LONG {sym}")
-        sig = signal_logic.build_signal(sym, "LONG", row, market_trend)
-        if sig:
-            gain_signals.append(sig)
-            iteration_logs.append(f"LONG {sym} - сигнал найден (score: {sig.score:.1f})")
-            logging.info("✅ LONG %s - сигнал принят (score: %.1f)", sym, sig.score)
-        else:
-            logging.info("❌ LONG %s - сигнал отклонен", sym)
-
-    for row in losers:
-        sym = row["symbol"]
-        logging.info("Проверяем SHORT %s", sym)
+        logging.info("Проверяем SHORT (реверсивно для gainer) %s", sym)
         checked_symbols.append(f"SHORT {sym}")
         sig = signal_logic.build_signal(sym, "SHORT", row, market_trend)
         if sig:
-            loss_signals.append(sig)
+            loss_signals.append(sig)  # SHORT сигналы идут в loss_signals
             iteration_logs.append(f"SHORT {sym} - сигнал найден (score: {sig.score:.1f})")
             logging.info("✅ SHORT %s - сигнал принят (score: %.1f)", sym, sig.score)
         else:
             logging.info("❌ SHORT %s - сигнал отклонен", sym)
+
+    for row in losers:
+        sym = row["symbol"]
+        logging.info("Проверяем LONG (реверсивно для loser) %s", sym)
+        checked_symbols.append(f"LONG {sym}")
+        sig = signal_logic.build_signal(sym, "LONG", row, market_trend)
+        if sig:
+            gain_signals.append(sig)  # LONG сигналы идут в gain_signals
+            iteration_logs.append(f"LONG {sym} - сигнал найден (score: {sig.score:.1f})")
+            logging.info("✅ LONG %s - сигнал принят (score: %.1f)", sym, sig.score)
+        else:
+            logging.info("❌ LONG %s - сигнал отклонен", sym)
     
     # Сортируем сигналы по оценке качества (без ограничения количества)
     gain_signals.sort(key=lambda x: x.score, reverse=True)
