@@ -425,19 +425,20 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         logging.info(f"{symbol} {side}: ❌ score слишком низкий ({signal_score:.1f} < {MIN_SCORE_THRESHOLD})")
         return None
 
-    # РЕВЕРСИВНЫЕ TP/SL: меняем местами
+    # SL/TP должны соответствовать направлению позиции (НЕ реверсивно!)
+    # Bybit требует: для Buy позиции SL ниже entry, TP выше; для Sell - наоборот
     if side == "LONG":
-        # Для LONG (на падающих): SL сверху, TP снизу (реверсивно)
-        entry = last_close
-        sl = entry + config.ATR_SL_MULTIPLIER * last_atr  # SL сверху
-        tp1 = entry - config.ATR_TP1_MULTIPLIER * last_atr  # TP снизу
-        tp2 = entry - config.ATR_TP2_MULTIPLIER * last_atr  # TP2 снизу
-    else:
-        # Для SHORT (на растущих): SL снизу, TP сверху (реверсивно)
+        # Для LONG (Buy позиция): SL снизу, TP сверху (стандартно)
         entry = last_close
         sl = entry - config.ATR_SL_MULTIPLIER * last_atr  # SL снизу
         tp1 = entry + config.ATR_TP1_MULTIPLIER * last_atr  # TP сверху
         tp2 = entry + config.ATR_TP2_MULTIPLIER * last_atr  # TP2 сверху
+    else:
+        # Для SHORT (Sell позиция): SL сверху, TP снизу (стандартно)
+        entry = last_close
+        sl = entry + config.ATR_SL_MULTIPLIER * last_atr  # SL сверху
+        tp1 = entry - config.ATR_TP1_MULTIPLIER * last_atr  # TP снизу
+        tp2 = entry - config.ATR_TP2_MULTIPLIER * last_atr  # TP2 снизу
     
     # Проверка минимального Risk/Reward соотношения перед входом
     # Это критично для прибыльности стратегии
