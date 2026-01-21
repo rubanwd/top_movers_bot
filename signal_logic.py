@@ -81,6 +81,7 @@ def calculate_signal_score(
     """Вычисляет оценку качества сигнала (0-100)"""
     score = 0.0
     
+<<<<<<< HEAD
     # РЕВЕРСИВНЫЙ RSI: для LONG используем SHORT зону, для SHORT - LONG зону
     if side == "LONG":
         # Для LONG (на падающих): используем SHORT зону RSI
@@ -114,6 +115,37 @@ def calculate_signal_score(
             # Требуем минимум 0.08% для начисления баллов
             if ema_diff_pct >= 0.08:
                 score += min(30, ema_diff_pct * 4)  # Баллы за силу тренда
+=======
+    # RSI в оптимальной зоне (25 баллов) - адаптировано под расширенные зоны
+    if side == "LONG":
+        if 48 <= rsi_val <= 60:  # Оптимальная зона для входа в LONG
+            score += 25
+        elif 45 <= rsi_val < 48 or 60 < rsi_val <= 63:
+            score += 15
+        elif 42 <= rsi_val < 45 or 63 < rsi_val <= 65:
+            score += 8
+    else:  # SHORT
+        if 40 <= rsi_val <= 52:  # Оптимальная зона для входа в SHORT
+            score += 25
+        elif 37 <= rsi_val < 40 or 52 < rsi_val <= 55:
+            score += 15
+        elif 35 <= rsi_val < 37 or 55 < rsi_val <= 58:
+            score += 8
+    
+    # EMA пересечение и сила тренда (30 баллов) - адаптировано под ослабленные требования
+    if side == "LONG":
+        if ema_fast_val > ema_slow_val:
+            ema_diff_pct = ((ema_fast_val - ema_slow_val) / ema_slow_val) * 100
+            # Снижено до 0.02% для большего количества сигналов
+            if ema_diff_pct >= 0.02:
+                score += min(30, ema_diff_pct * 6)  # Увеличена чувствительность для компенсации
+    else:  # SHORT
+        if ema_fast_val < ema_slow_val:
+            ema_diff_pct = ((ema_slow_val - ema_fast_val) / ema_slow_val) * 100
+            # Снижено до 0.02% для большего количества сигналов
+            if ema_diff_pct >= 0.02:
+                score += min(30, ema_diff_pct * 6)  # Увеличена чувствительность для компенсации
+>>>>>>> parent of 9d6438d (enh 11)
     
     # РЕВЕРСИВНЫЙ MACD: для LONG нужен отрицательный, для SHORT - положительный
     if config.USE_MACD:
@@ -197,6 +229,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         
         # РЕВЕРСИВНЫЙ momentum: для LONG нужен momentum вниз, для SHORT - вверх
         if side == "LONG":
+<<<<<<< HEAD
             # Для LONG (на падающих): требуем ускорение падения (реверсивно)
             momentum_ok = (price_change_1 < price_change_2 and price_change_1 < -0.1) or \
                          (price_change_1 < -0.15 and price_change_2 < -0.05) or \
@@ -208,6 +241,23 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
                          (price_change_1 > 0.15 and price_change_2 > 0.05) or \
                          (price_change_1 > 0.12 and price_change_2 > 0.08) or \
                          (price_change_1 > 0.1 and price_change_2 > 0.1 and price_change_3 > 0.05)
+=======
+            # Для LONG: очень ослабленные требования для получения ~5 сигналов в сутки
+            # Принимаем если: любое положительное движение с ускорением ИЛИ просто рост
+            momentum_ok = (price_change_1 > price_change_2 and price_change_1 > 0.05) or \
+                         (price_change_1 > 0.1 and price_change_2 > 0.0) or \
+                         (price_change_1 > 0.08 and price_change_2 > 0.05) or \
+                         (price_change_1 > 0.06 and price_change_2 > 0.06 and price_change_3 > 0.03) or \
+                         (price_change_1 > 0.12)  # Просто сильное движение вверх
+        else:
+            # Для SHORT: очень ослабленные требования для получения ~5 сигналов в сутки
+            # Принимаем если: любое отрицательное движение с ускорением ИЛИ просто падение
+            momentum_ok = (price_change_1 < price_change_2 and price_change_1 < -0.05) or \
+                         (price_change_1 < -0.1 and price_change_2 < 0.0) or \
+                         (price_change_1 < -0.08 and price_change_2 < -0.05) or \
+                         (price_change_1 < -0.06 and price_change_2 < -0.06 and price_change_3 < -0.03) or \
+                         (price_change_1 < -0.12)  # Просто сильное движение вниз
+>>>>>>> parent of 9d6438d (enh 11)
 
     # ========== ПРОВЕРКИ ДЛЯ РАННЕГО ОБНАРУЖЕНИЯ ДВИЖЕНИЯ (ОПЦИОНАЛЬНЫЕ) ==========
     
@@ -225,6 +275,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
             logging.debug(f"{symbol} {side}: недостаточно данных для RECENT_MOVE_CHECK")
             return None
         
+<<<<<<< HEAD
         # РЕВЕРСИВНАЯ проверка: для LONG нужен минус, для SHORT - плюс
         if side == "LONG":
             # Для LONG (на падающих): требуем отрицательное изменение
@@ -232,6 +283,18 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         else:
             # Для SHORT (на растущих): требуем положительное изменение
             recent_move_ok = recent_change_pct >= config.MIN_RECENT_CHANGE_PCT
+=======
+        # Более гибкая проверка: для 5m таймфрейма изменения обычно небольшие
+        # Принимаем если движение в правильном направлении и составляет хотя бы 50% от минимума
+        if side == "LONG":
+            # Для LONG: принимаем если изменение >= минимума ИЛИ если положительное и >= 50% минимума
+            recent_move_ok = recent_change_pct >= config.MIN_RECENT_CHANGE_PCT or \
+                           (recent_change_pct > 0 and recent_change_pct >= config.MIN_RECENT_CHANGE_PCT * 0.5)
+        else:
+            # Для SHORT: аналогично
+            recent_move_ok = recent_change_pct <= -config.MIN_RECENT_CHANGE_PCT or \
+                           (recent_change_pct < 0 and recent_change_pct <= -config.MIN_RECENT_CHANGE_PCT * 0.5)
+>>>>>>> parent of 9d6438d (enh 11)
         
         if not recent_move_ok:
             logging.info(f"{symbol} {side}: ❌ RECENT_MOVE не прошел (изменение: {recent_change_pct:.2f}%, требуется: {config.MIN_RECENT_CHANGE_PCT}%)")
@@ -249,6 +312,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         
         # РЕВЕРСИВНАЯ проверка RSI: для LONG используем SHORT зону, для SHORT - LONG зону
         if side == "LONG":
+<<<<<<< HEAD
             # Для LONG (на падающих): используем SHORT зону RSI
             rsi_in_zone = config.RSI_SHORT_MIN <= last_rsi <= config.RSI_SHORT_MAX
             rsi_just_entered = (prev_rsi > config.RSI_SHORT_MAX or prev_prev_rsi > config.RSI_SHORT_MAX) and rsi_in_zone
@@ -262,6 +326,22 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
             rsi_rising = last_rsi > prev_rsi  # RSI растет
             # Принимаем если RSI в зоне И (только что вошел ИЛИ растет)
             rsi_entry_ok = rsi_in_zone and (rsi_just_entered or rsi_rising)
+=======
+            # Ослабленная проверка: RSI в зоне И (только что вошел ИЛИ растет ИЛИ в начале зоны)
+            rsi_in_zone = config.RSI_LONG_MIN <= last_rsi <= config.RSI_LONG_MAX
+            rsi_just_entered = (prev_rsi < config.RSI_LONG_MIN or prev_prev_rsi < config.RSI_LONG_MIN) and rsi_in_zone
+            rsi_rising = last_rsi > prev_rsi  # RSI растет
+            rsi_in_early_zone = config.RSI_LONG_MIN <= last_rsi <= (config.RSI_LONG_MIN + (config.RSI_LONG_MAX - config.RSI_LONG_MIN) * 0.6)  # Первые 60% зоны
+            # Принимаем если RSI в зоне И (только что вошел ИЛИ растет ИЛИ в начале зоны)
+            rsi_entry_ok = rsi_in_zone and (rsi_just_entered or rsi_rising or rsi_in_early_zone)
+        else:
+            # Для SHORT: аналогично
+            rsi_in_zone = config.RSI_SHORT_MIN <= last_rsi <= config.RSI_SHORT_MAX
+            rsi_just_entered = (prev_rsi > config.RSI_SHORT_MAX or prev_prev_rsi > config.RSI_SHORT_MAX) and rsi_in_zone
+            rsi_falling = last_rsi < prev_rsi  # RSI падает
+            rsi_in_early_zone = (config.RSI_SHORT_MIN + (config.RSI_SHORT_MAX - config.RSI_SHORT_MIN) * 0.4) <= last_rsi <= config.RSI_SHORT_MAX  # Последние 60% зоны
+            rsi_entry_ok = rsi_in_zone and (rsi_just_entered or rsi_falling or rsi_in_early_zone)
+>>>>>>> parent of 9d6438d (enh 11)
         
         if not rsi_entry_ok:
             logging.info(f"{symbol} {side}: ❌ RSI_ENTRY не прошел (RSI: {last_rsi:.1f}, prev: {prev_rsi:.1f})")
@@ -281,6 +361,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         
         # РЕВЕРСИВНАЯ проверка EMA: для LONG нужен нисходящий тренд, для SHORT - восходящий
         if side == "LONG":
+<<<<<<< HEAD
             # Для LONG (на падающих): EMA12 < EMA26 (нисходящий тренд)
             ema_correct_order = last_ema_fast < last_ema_slow
             ema_crossed = (prev_ema_fast >= prev_ema_slow or prev_prev_ema_fast >= prev_prev_ema_slow) and ema_correct_order
@@ -292,19 +373,39 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
             ema_crossed = (prev_ema_fast <= prev_ema_slow or prev_prev_ema_fast <= prev_prev_ema_slow) and ema_correct_order
             # Принимаем только если EMA недавно пересекли (ранний вход в тренд)
             ema_cross_ok = ema_correct_order and ema_crossed
+=======
+            # Ослабленная проверка: EMA в правильном порядке И (пересекли недавно ИЛИ сближаются ИЛИ уже пересекли)
+            ema_correct_order = last_ema_fast > last_ema_slow
+            ema_crossed = (prev_ema_fast <= prev_ema_slow or prev_prev_ema_fast <= prev_prev_ema_slow) and ema_correct_order
+            ema_converging = (last_ema_fast - last_ema_slow) > (prev_ema_fast - prev_ema_slow)  # Сближаются
+            ema_almost_crossed = last_ema_fast > last_ema_slow * 0.995  # Почти пересекли (ослаблено с 0.998)
+            ema_cross_ok = ema_correct_order and (ema_crossed or ema_converging or ema_almost_crossed)
+        else:
+            # Для SHORT: аналогично
+            ema_correct_order = last_ema_fast < last_ema_slow
+            ema_crossed = (prev_ema_fast >= prev_ema_slow or prev_prev_ema_fast >= prev_prev_ema_slow) and ema_correct_order
+            ema_converging = (last_ema_slow - last_ema_fast) > (prev_ema_slow - prev_ema_fast)  # Сближаются
+            ema_almost_crossed = last_ema_fast < last_ema_slow * 1.005  # Почти пересекли (ослаблено с 1.002)
+            ema_cross_ok = ema_correct_order and (ema_crossed or ema_converging or ema_almost_crossed)
+>>>>>>> parent of 9d6438d (enh 11)
         
         if not ema_cross_ok:
             logging.info(f"{symbol} {side}: ❌ EMA_CROSS не прошел (EMA12: {last_ema_fast:.6g}, EMA26: {last_ema_slow:.6g})")
             return None
     
-    # 4. Проверка, что объем начал расти недавно - ОБЯЗАТЕЛЬНО для качества
+    # 4. Проверка, что объем начал расти недавно - ОПЦИОНАЛЬНО
     vol_recent_ok = True
     if config.VOL_RECENT_CHECK:
         if len(vol) >= config.RECENT_CANDLES_LOOKBACK:
             recent_vols = vol.iloc[-config.RECENT_CANDLES_LOOKBACK:].astype(float)
             recent_avg_vol = float(recent_vols.mean())
+<<<<<<< HEAD
             # Объем за последние N свечей должен быть выше среднего (сбалансировано)
             vol_recent_ok = recent_avg_vol > avg_vol * 1.08  # 8% выше среднего
+=======
+            # Объем за последние N свечей должен быть выше среднего (ужесточено до 5%)
+            vol_recent_ok = recent_avg_vol > avg_vol * 1.05  # 5% выше среднего для качества
+>>>>>>> parent of 9d6438d (enh 11)
         
         if not vol_recent_ok:
             logging.info(f"{symbol} {side}: ❌ VOL_RECENT не прошел (recent_avg: {recent_avg_vol:.0f}, avg: {avg_vol:.0f})")
@@ -317,6 +418,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
 
     # РЕВЕРСИВНАЯ СТРАТЕГИЯ: меняем местами условия LONG и SHORT
     if side == "LONG":
+<<<<<<< HEAD
         # Для LONG (на падающих монетах): требуем нисходящий тренд (реверсивно)
         ema_diff_pct = ((last_ema_slow - last_ema_fast) / last_ema_slow) * 100
         # Требуем минимум 0.08% разницы для подтверждения направления тренда
@@ -328,6 +430,19 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         # Требуем минимум 0.08% разницы для подтверждения направления тренда
         trend_ok = last_ema_fast > last_ema_slow and ema_diff_pct >= 0.08
         rsi_ok = config.RSI_LONG_MIN <= last_rsi <= config.RSI_LONG_MAX  # Используем LONG зону для SHORT
+=======
+        # Ослабленная проверка тренда: минимальное требование для большего количества сигналов
+        ema_diff_pct = ((last_ema_fast - last_ema_slow) / last_ema_slow) * 100
+        # Снижено до 0.02% - просто проверяем направление тренда
+        trend_ok = last_ema_fast > last_ema_slow and ema_diff_pct >= 0.02
+        rsi_ok = config.RSI_LONG_MIN <= last_rsi <= config.RSI_LONG_MAX
+    else:
+        # Ослабленная проверка тренда: минимальное требование для большего количества сигналов
+        ema_diff_pct = ((last_ema_slow - last_ema_fast) / last_ema_slow) * 100
+        # Снижено до 0.02% - просто проверяем направление тренда
+        trend_ok = last_ema_fast < last_ema_slow and ema_diff_pct >= 0.02
+        rsi_ok = config.RSI_SHORT_MIN <= last_rsi <= config.RSI_SHORT_MAX
+>>>>>>> parent of 9d6438d (enh 11)
 
     # Дополнительная проверка: минимальный объем за 24ч должен быть достаточно большим
     volume_24h_ok = float(ticker_row["quoteVolume"]) >= config.MIN_QUOTE_VOLUME_USDT
@@ -337,11 +452,25 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         return None
     
     # Дополнительный фильтр: избегаем входов когда цена слишком далеко от EMA
+<<<<<<< HEAD
     # РЕВЕРСИВНО: для LONG (на падающих) проверяем снизу, для SHORT (на растущих) - сверху
     if side == "LONG":
         # Для LONG (на падающих): цена не должна быть слишком далеко ниже EMA
         price_to_ema_fast = ((last_ema_fast - last_close) / last_ema_fast) * 100
         if price_to_ema_fast > 2.0:
+=======
+    # Ослаблено: увеличено до 3.5% для большего количества сигналов
+    if side == "LONG":
+        price_to_ema_fast = ((last_close - last_ema_fast) / last_ema_fast) * 100
+        # Если цена более чем на 3.5% выше быстрой EMA, возможно уже поздно входить
+        if price_to_ema_fast > 3.5:
+            logging.info(f"{symbol} {side}: ❌ цена слишком далеко от EMA быстрой ({price_to_ema_fast:.2f}% выше)")
+            return None
+    else:  # SHORT
+        price_to_ema_fast = ((last_ema_fast - last_close) / last_ema_fast) * 100
+        # Если цена более чем на 3.5% ниже быстрой EMA, возможно уже поздно входить
+        if price_to_ema_fast > 3.5:
+>>>>>>> parent of 9d6438d (enh 11)
             logging.info(f"{symbol} {side}: ❌ цена слишком далеко от EMA быстрой ({price_to_ema_fast:.2f}% ниже)")
             return None
     else:  # SHORT
@@ -352,7 +481,11 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
             return None
     
     # Основные проверки: тренд, RSI, и (всплеск объема ИЛИ momentum) - требуем ХОТЯ БЫ ОДНО
+<<<<<<< HEAD
     # Баланс между качеством и количеством: требуем либо всплеск объема, либо momentum
+=======
+    # Изменено: volume OR momentum для большего количества сигналов при сохранении качества
+>>>>>>> parent of 9d6438d (enh 11)
     volume_or_momentum_ok = vol_spike or momentum_ok  # Требуем ХОТЯ БЫ ОДНО условие
     
     if not (trend_ok and rsi_ok and volume_or_momentum_ok):
@@ -366,6 +499,7 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         logging.info(f"{symbol} {side}: ❌ основные проверки не прошли: {', '.join(failed_checks)}")
         return None
     
+<<<<<<< HEAD
     # Проверка MACD для подтверждения тренда (опциональна, влияет на score)
     # РЕВЕРСИВНО: для LONG нужен отрицательный MACD, для SHORT - положительный
     macd_confirm = False
@@ -383,6 +517,11 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         if last_adx >= config.MIN_ADX:
             adx_strong = True
         # Не блокируем сигнал, если ADX слабый - просто не даем бонусы
+=======
+    # Проверка MACD и ADX теперь не блокируют сигналы
+    # Они используются только для расчета score в calculate_signal_score()
+    # Если MACD/ADX не подтверждают, сигнал все равно может пройти, но с меньшим score
+>>>>>>> parent of 9d6438d (enh 11)
     
     # Дополнительный фильтр: проверка волатильности через ATR
     # Избегаем входов в периоды слишком высокой волатильности (риск больших проскальзываний)
@@ -419,26 +558,30 @@ def build_signal(symbol: str, side: str, ticker_row: Dict, market_trend: str) ->
         price_change_24h=price_change_24h,
     )
     
+<<<<<<< HEAD
     # Минимальная оценка для принятия сигнала (сбалансировано для получения нескольких сигналов в день)
     MIN_SCORE_THRESHOLD = 50.0  # Сбалансировано для получения нескольких сигналов в день
+=======
+    # Минимальная оценка для принятия сигнала (снижено для получения ~5 сигналов в сутки)
+    MIN_SCORE_THRESHOLD = 40.0  # Снижено для получения ~5 сигналов в сутки естественным образом
+>>>>>>> parent of 9d6438d (enh 11)
     if signal_score < MIN_SCORE_THRESHOLD:
         logging.info(f"{symbol} {side}: ❌ score слишком низкий ({signal_score:.1f} < {MIN_SCORE_THRESHOLD})")
         return None
 
-    # SL/TP должны соответствовать направлению позиции (НЕ реверсивно!)
-    # Bybit требует: для Buy позиции SL ниже entry, TP выше; для Sell - наоборот
+    # РЕВЕРСИВНЫЕ TP/SL: меняем местами
     if side == "LONG":
-        # Для LONG (Buy позиция): SL снизу, TP сверху (стандартно)
-        entry = last_close
-        sl = entry - config.ATR_SL_MULTIPLIER * last_atr  # SL снизу
-        tp1 = entry + config.ATR_TP1_MULTIPLIER * last_atr  # TP сверху
-        tp2 = entry + config.ATR_TP2_MULTIPLIER * last_atr  # TP2 сверху
-    else:
-        # Для SHORT (Sell позиция): SL сверху, TP снизу (стандартно)
+        # Для LONG (на падающих): SL сверху, TP снизу (реверсивно)
         entry = last_close
         sl = entry + config.ATR_SL_MULTIPLIER * last_atr  # SL сверху
         tp1 = entry - config.ATR_TP1_MULTIPLIER * last_atr  # TP снизу
         tp2 = entry - config.ATR_TP2_MULTIPLIER * last_atr  # TP2 снизу
+    else:
+        # Для SHORT (на растущих): SL снизу, TP сверху (реверсивно)
+        entry = last_close
+        sl = entry - config.ATR_SL_MULTIPLIER * last_atr  # SL снизу
+        tp1 = entry + config.ATR_TP1_MULTIPLIER * last_atr  # TP сверху
+        tp2 = entry + config.ATR_TP2_MULTIPLIER * last_atr  # TP2 сверху
     
     # Проверка минимального Risk/Reward соотношения перед входом
     # Это критично для прибыльности стратегии
