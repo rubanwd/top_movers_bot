@@ -42,30 +42,58 @@ def run_once():
     loss_signals: List[Signal] = []
 
     checked_symbols = []
-    # РЕВЕРСИВНАЯ СТРАТЕГИЯ: gainers (растущие) -> SHORT, losers (падающие) -> LONG
-    for row in gainers:
-        sym = row["symbol"]
-        logging.info("Проверяем SHORT (реверсивно для gainer) %s", sym)
-        checked_symbols.append(f"SHORT {sym}")
-        sig = signal_logic.build_signal(sym, "SHORT", row, market_trend)
-        if sig:
-            loss_signals.append(sig)  # SHORT сигналы идут в loss_signals
-            iteration_logs.append(f"SHORT {sym} - сигнал найден (score: {sig.score:.1f})")
-            logging.info("✅ SHORT %s - сигнал принят (score: %.1f)", sym, sig.score)
-        else:
-            logging.info("❌ SHORT %s - сигнал отклонен", sym)
+    # STRATEGY_MODE: "trend" = LONG на gainers, SHORT на losers (следование за трендом)
+    # "reversal" = LONG на losers, SHORT на gainers (реверсивная)
+    if config.STRATEGY_MODE == "trend":
+        # Trend-following: растущие -> LONG, падающие -> SHORT
+        for row in gainers:
+            sym = row["symbol"]
+            logging.info("Проверяем LONG (trend для gainer) %s", sym)
+            checked_symbols.append(f"LONG {sym}")
+            sig = signal_logic.build_signal(sym, "LONG", row, market_trend)
+            if sig:
+                gain_signals.append(sig)
+                iteration_logs.append(f"LONG {sym} - сигнал найден (score: {sig.score:.1f})")
+                logging.info("✅ LONG %s - сигнал принят (score: %.1f)", sym, sig.score)
+            else:
+                logging.info("❌ LONG %s - сигнал отклонен", sym)
 
-    for row in losers:
-        sym = row["symbol"]
-        logging.info("Проверяем LONG (реверсивно для loser) %s", sym)
-        checked_symbols.append(f"LONG {sym}")
-        sig = signal_logic.build_signal(sym, "LONG", row, market_trend)
-        if sig:
-            gain_signals.append(sig)  # LONG сигналы идут в gain_signals
-            iteration_logs.append(f"LONG {sym} - сигнал найден (score: {sig.score:.1f})")
-            logging.info("✅ LONG %s - сигнал принят (score: %.1f)", sym, sig.score)
-        else:
-            logging.info("❌ LONG %s - сигнал отклонен", sym)
+        for row in losers:
+            sym = row["symbol"]
+            logging.info("Проверяем SHORT (trend для loser) %s", sym)
+            checked_symbols.append(f"SHORT {sym}")
+            sig = signal_logic.build_signal(sym, "SHORT", row, market_trend)
+            if sig:
+                loss_signals.append(sig)
+                iteration_logs.append(f"SHORT {sym} - сигнал найден (score: {sig.score:.1f})")
+                logging.info("✅ SHORT %s - сигнал принят (score: %.1f)", sym, sig.score)
+            else:
+                logging.info("❌ SHORT %s - сигнал отклонен", sym)
+    else:
+        # Reversal: растущие -> SHORT, падающие -> LONG
+        for row in gainers:
+            sym = row["symbol"]
+            logging.info("Проверяем SHORT (reversal для gainer) %s", sym)
+            checked_symbols.append(f"SHORT {sym}")
+            sig = signal_logic.build_signal(sym, "SHORT", row, market_trend)
+            if sig:
+                loss_signals.append(sig)
+                iteration_logs.append(f"SHORT {sym} - сигнал найден (score: {sig.score:.1f})")
+                logging.info("✅ SHORT %s - сигнал принят (score: %.1f)", sym, sig.score)
+            else:
+                logging.info("❌ SHORT %s - сигнал отклонен", sym)
+
+        for row in losers:
+            sym = row["symbol"]
+            logging.info("Проверяем LONG (reversal для loser) %s", sym)
+            checked_symbols.append(f"LONG {sym}")
+            sig = signal_logic.build_signal(sym, "LONG", row, market_trend)
+            if sig:
+                gain_signals.append(sig)
+                iteration_logs.append(f"LONG {sym} - сигнал найден (score: {sig.score:.1f})")
+                logging.info("✅ LONG %s - сигнал принят (score: %.1f)", sym, sig.score)
+            else:
+                logging.info("❌ LONG %s - сигнал отклонен", sym)
     
     # Сортируем сигналы по оценке качества (без ограничения количества)
     gain_signals.sort(key=lambda x: x.score, reverse=True)
@@ -212,7 +240,7 @@ def main():
         logging.info("\nПереходим в обычный режим работы...\n")
     
     logging.info(f"Запускаем {exchange_name} Top Movers bot (FULL mode).")
-    logging.info(f"Текущие настройки: TOP_N={config.TOP_N}, SCAN_INTERVAL_SECONDS={config.SCAN_INTERVAL_SECONDS}")
+    logging.info(f"Текущие настройки: TOP_N={config.TOP_N}, SCAN_INTERVAL_SECONDS={config.SCAN_INTERVAL_SECONDS}, STRATEGY_MODE={config.STRATEGY_MODE}")
     while True:
         try:
             run_once()

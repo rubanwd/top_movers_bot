@@ -51,8 +51,8 @@ logging.info(f"TOP_N после обработки: {TOP_N}")
 
 MIN_QUOTE_VOLUME_USDT = float(os.getenv("MIN_QUOTE_VOLUME_USDT", "5000000"))  # Увеличено до 5M для более ликвидных пар
 
-# Логируем загруженные значения для отладки
-logging.info(f"Загружены настройки: TOP_N={TOP_N}, SCAN_INTERVAL_SECONDS={SCAN_INTERVAL_SECONDS}, MIN_QUOTE_VOLUME_USDT={MIN_QUOTE_VOLUME_USDT}")
+# Минимальный score для принятия сигнала (чем выше - тем меньше сигналов, но качественнее)
+MIN_SCORE_THRESHOLD = float(os.getenv("MIN_SCORE_THRESHOLD", "60.0"))
 
 # Таймфреймы
 TIMEFRAME_MAIN = os.getenv("TIMEFRAME_MAIN", "5m")
@@ -75,8 +75,17 @@ ATR_TP2_MULTIPLIER = float(os.getenv("ATR_TP2_MULTIPLIER", "4.0"))  # Увели
 # Фильтр тренда BTC (включен для более точных сигналов)
 BTC_TREND_FILTER = int(os.getenv("BTC_TREND_FILTER", "1"))  # Включено для более точных сигналов
 
+# Режим стратегии: "trend" = следование за трендом (LONG на gainers, SHORT на losers),
+# "reversal" = реверсивная (LONG на losers, SHORT на gainers).
+# Для топ-муверов trend обычно даёт лучший win rate, т.к. momentum часто продолжается.
+STRATEGY_MODE = os.getenv("STRATEGY_MODE", "trend").lower()
+if STRATEGY_MODE not in ("trend", "reversal"):
+    STRATEGY_MODE = "trend"
+
+logging.info(f"Загружены настройки: TOP_N={TOP_N}, SCAN_INTERVAL_SECONDS={SCAN_INTERVAL_SECONDS}, MIN_QUOTE_VOLUME_USDT={MIN_QUOTE_VOLUME_USDT}, STRATEGY_MODE={STRATEGY_MODE}")
+
 # Параметры для раннего обнаружения движения
-MAX_24H_CHANGE = float(os.getenv("MAX_24H_CHANGE", "20.0"))  # Уменьшено до 20% для избежания перекупленных/перепроданных
+MAX_24H_CHANGE = float(os.getenv("MAX_24H_CHANGE", "15.0"))  # Ограничение 24h: избегаем перекупленных/перепроданных
 USE_MAX_24H_FILTER = int(os.getenv("USE_MAX_24H_FILTER", "1"))
 RECENT_CANDLES_LOOKBACK = int(os.getenv("RECENT_CANDLES_LOOKBACK", "2"))
 MIN_RECENT_CHANGE_PCT = float(os.getenv("MIN_RECENT_CHANGE_PCT", "0.35"))  # Сбалансированное движение
@@ -92,6 +101,9 @@ VOL_RECENT_CHECK = int(os.getenv("VOL_RECENT_CHECK", "0"))  # Отключено
 USE_MACD = int(os.getenv("USE_MACD", "1"))  # Используется для бонусов в score, не блокирует сигналы
 USE_ADX = int(os.getenv("USE_ADX", "1"))  # Используется для бонусов в score, не блокирует сигналы
 MIN_ADX = float(os.getenv("MIN_ADX", "22.0"))  # Сбалансированное требование к силе тренда
+
+# Требовать ОБА условия (всплеск объема И momentum) для входа. 1=да (меньше сигналов, выше качество), 0=хотя бы одно
+REQUIRE_BOTH_VOLUME_AND_MOMENTUM = int(os.getenv("REQUIRE_BOTH_VOLUME_AND_MOMENTUM", "1"))
 
 # Валидация обязательных параметров
 if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
